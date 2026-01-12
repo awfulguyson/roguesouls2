@@ -1,0 +1,40 @@
+# Root level gitignore
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+dist/
+build/
+*.dll
+*.exe
+
+# Dependencies (will be in sub-projects)
+node_modules/
+packages/
+
+# Unity specific (handled in client/.gitignore)
+# Node.js specific (handled in server/.gitignore)
+
