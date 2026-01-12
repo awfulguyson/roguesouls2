@@ -1,0 +1,12 @@
+# Cloudflare Pages configuration
+# This file is optional - Cloudflare Pages auto-detects Flutter web builds
+
+[build]
+command = "flutter build web --release"
+publish = "build/web"
+
+[build.environment]
+# Set these in Cloudflare Pages dashboard under Build settings
+# API_BASE_URL = "https://your-backend-url.com"
+# WEBSOCKET_URL = "https://your-backend-url.com"
+

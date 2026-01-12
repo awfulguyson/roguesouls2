@@ -1,50 +1,38 @@
 {
   "name": "roguesouls-server",
-  "version": "0.1.0",
-  "description": "RogueSouls game server backend",
+  "version": "1.0.0",
+  "description": "Backend server for RogueSouls MMO",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "migrate": "tsx src/database/migrate.ts",
-    "seed": "tsx src/database/seed.ts",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --ext .ts --fix",
-    "test": "jest",
-    "test:watch": "jest --watch"
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [
-    "game",
-    "server",
-    "mmo",
-    "roguelike"
-  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "fastify": "^4.24.3",
-    "@fastify/websocket": "^8.3.0",
-    "@fastify/cors": "^8.4.0",
-    "pg": "^8.11.3",
-    "redis": "^4.6.10",
     "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
     "jsonwebtoken": "^9.0.2",
-    "zod": "^3.22.4",
-    "dotenv": "^16.3.1"
+    "pg": "^8.13.1",
+    "redis": "^4.7.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "@types/node": "^20.10.0",
-    "@types/pg": "^8.10.9",
     "@types/bcrypt": "^5.0.2",
-    "@types/jsonwebtoken": "^9.0.5",
-    "@typescript-eslint/eslint-plugin": "^6.13.0",
-    "@typescript-eslint/parser": "^6.13.0",
-    "eslint": "^8.54.0",
-    "tsx": "^4.6.2",
-    "typescript": "^5.3.2",
-    "jest": "^29.7.0",
-    "@types/jest": "^29.5.8"
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.2",
+    "@types/node": "^22.10.2",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
   }
 }
-

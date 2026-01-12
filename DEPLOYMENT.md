@@ -1,205 +1,140 @@
-# Cloud Deployment Guide
+# Deployment Guide
 
-This project is designed to run entirely in the cloud, allowing multiple developers to collaborate without running servers locally.
+This guide covers deploying RogueSouls to production.
 
-## Recommended Cloud Services
+## Quick Deploy Options
 
-### Database: PostgreSQL
+### Option 1: Railway (Easiest - Free Tier Available)
 
-**Option 1: Supabase (Recommended for Indie)**
-- Free tier: 500MB database, 2GB bandwidth
-- Easy setup, great developer experience
-- Built-in connection pooling
-- URL: https://supabase.com
+**Backend (Railway):**
+1. Go to https://railway.app
+2. Sign up/login
+3. Click "New Project" → "Deploy from GitHub repo"
+4. Connect your GitHub repo
+5. Select the `server` folder as the root
+6. Railway will auto-detect Node.js and deploy
+7. Add environment variables:
+   - `PORT` (Railway sets this automatically)
+   - `NODE_ENV=production`
+8. Copy the deployed URL (e.g., `https://your-app.railway.app`)
 
-**Option 2: Neon**
-- Free tier: 3GB storage, serverless PostgreSQL
-- Great for scaling
-- URL: https://neon.tech
+**Frontend (Netlify/Vercel):**
+1. Build Flutter web: `flutter build web --release`
+2. Deploy the `client/build/web` folder to Netlify or Vercel
+3. Set environment variables during build:
+   - `API_BASE_URL=https://your-backend.railway.app`
+   - `WEBSOCKET_URL=https://your-backend.railway.app`
 
-**Option 3: Railway**
-- Simple PostgreSQL addon
-- Pay-as-you-go
-- URL: https://railway.app
+### Option 2: Render (Free Tier)
 
-**Setup:**
-1. Create account and database
-2. Copy connection string (DATABASE_URL)
-3. Add to environment variables
+**Backend:**
+1. Go to https://render.com
+2. Create new Web Service
+3. Connect GitHub repo
+4. Set:
+   - Build Command: `cd server && npm install && npm run build`
+   - Start Command: `cd server && npm start`
+   - Root Directory: `server`
+5. Add environment variables
+6. Deploy
 
-### Redis
+**Frontend:**
+1. Build: `flutter build web --release`
+2. Deploy `client/build/web` to Render Static Site or Netlify
 
-**Option 1: Upstash (Recommended)**
-- Free tier: 10K commands/day
-- Serverless Redis
-- URL: https://upstash.com
+### Option 3: Heroku (Paid, but reliable)
 
-**Option 2: Railway Redis**
-- Simple Redis addon
-- URL: https://railway.app
-
-**Setup:**
-1. Create account and Redis database
-2. Copy connection string (REDIS_URL)
-3. Add to environment variables
-
-### Server Hosting
-
-**Option 1: Railway (Recommended for Simplicity)**
-- Free tier: $5 credit/month
-- Easy deployment from GitHub
-- Automatic HTTPS
-- URL: https://railway.app
-
-**Option 2: Render**
-- Free tier available (with limitations)
-- Easy GitHub integration
-- URL: https://render.com
-
-**Option 3: Fly.io**
-- Generous free tier
-- Global edge deployment
-- URL: https://fly.io
-
-## Deployment Steps
-
-### Railway Deployment
-
-1. **Create Railway Account**
-   - Go to https://railway.app
-   - Sign up with GitHub
-
-2. **Create New Project**
-   - Click "New Project"
-   - Select "Deploy from GitHub repo"
-   - Select your RogueSouls repository
-
-3. **Add PostgreSQL**
-   - Click "+ New" → "Database" → "PostgreSQL"
-   - Railway automatically creates DATABASE_URL
-
-4. **Add Redis**
-   - Click "+ New" → "Database" → "Redis"
-   - Railway automatically creates REDIS_URL
-
-5. **Configure Environment Variables**
-   - Go to project settings → Variables
-   - Add:
-     - `NODE_ENV=production`
-     - `JWT_SECRET=<generate-strong-random-string>`
-     - `STEAM_API_KEY=<your-steam-key>`
-     - `STEAM_APP_ID=<your-steam-app-id>`
-     - `CORS_ORIGIN=<your-frontend-url>`
-
-6. **Deploy**
-   - Railway auto-deploys on git push
-   - Or click "Deploy" button
-
-### Render Deployment
-
-1. **Create Render Account**
-   - Go to https://render.com
-   - Sign up with GitHub
-
-2. **Create Web Service**
-   - New → Web Service
-   - Connect GitHub repo
-   - Build command: `cd server && npm install && npm run build`
-   - Start command: `cd server && npm start`
-
-3. **Add PostgreSQL**
-   - New → PostgreSQL
-   - Copy DATABASE_URL to environment variables
-
-4. **Add Redis**
-   - New → Redis
-   - Copy REDIS_URL to environment variables
-
-5. **Configure Environment Variables**
-   - Add all required variables (see .env.example)
-
-### Environment Variables for Production
-
-Required variables:
+**Backend:**
 ```bash
-NODE_ENV=production
+cd server
+heroku create your-app-name
+heroku config:set NODE_ENV=production
+git push heroku main
+```
+
+**Frontend:**
+Deploy `client/build/web` to Netlify/Vercel with environment variables
+
+## Step-by-Step: Railway + Netlify
+
+### 1. Deploy Backend to Railway
+
+1. Push code to GitHub
+2. Go to Railway.app → New Project → GitHub
+3. Select repo → Add Service → Select `server` folder
+4. Railway auto-deploys
+5. Copy the URL (e.g., `https://roguesouls-backend.railway.app`)
+
+### 2. Build Flutter Web App
+
+```bash
+cd client
+flutter build web --release --dart-define=API_BASE_URL=https://your-backend.railway.app --dart-define=WEBSOCKET_URL=https://your-backend.railway.app
+```
+
+This creates `client/build/web` folder with production build.
+
+### 3. Deploy Frontend to Netlify
+
+1. Go to https://netlify.com
+2. Sign up/login
+3. Drag and drop `client/build/web` folder
+4. Or connect GitHub and set build command:
+   - Build command: `cd client && flutter build web --release --dart-define=API_BASE_URL=https://your-backend.railway.app --dart-define=WEBSOCKET_URL=https://your-backend.railway.app`
+   - Publish directory: `client/build/web`
+
+### 4. Update CORS on Backend
+
+In `server/src/index.ts`, update CORS to allow your frontend domain:
+
+```typescript
+const io = new Server(httpServer, {
+  cors: {
+    origin: ['https://your-app.netlify.app', 'http://localhost:8080'],
+    methods: ['GET', 'POST']
+  }
+});
+```
+
+## Environment Variables
+
+### Backend (.env)
+```
 PORT=3000
-DATABASE_URL=<from-cloud-provider>
-REDIS_URL=<from-cloud-provider>
-JWT_SECRET=<strong-random-string>
-STEAM_API_KEY=<your-key>
-STEAM_APP_ID=<your-app-id>
-CORS_ORIGIN=<your-frontend-url>
+NODE_ENV=production
+DB_HOST=your-db-host
+DB_PORT=5432
+DB_NAME=roguesouls
+DB_USER=your-user
+DB_PASSWORD=your-password
+REDIS_HOST=your-redis-host
+REDIS_PORT=6379
+JWT_SECRET=your-secret-key
 ```
 
-## Multi-Developer Setup
+### Frontend (Build-time)
+```
+API_BASE_URL=https://your-backend.railway.app
+WEBSOCKET_URL=https://your-backend.railway.app
+```
 
-### Shared Development Database
+## Testing Production Build Locally
 
-**Option 1: Shared Cloud Database (Recommended)**
-- Use same cloud database for all developers
-- Everyone connects to same DATABASE_URL
-- Changes are visible to all immediately
-- Use different schema prefixes if needed
-
-**Option 2: Individual Databases**
-- Each developer gets their own database
-- Use different DATABASE_URL per developer
-- More isolated, but requires more setup
-
-### Environment Variables Management
-
-**For Team Collaboration:**
-1. Use Railway/Render's shared environment variables
-2. Or use `.env.shared` file (don't commit secrets)
-3. Document required variables in `.env.example`
-
-### Database Migrations
-
-Run migrations on shared database:
 ```bash
-npm run migrate
+# Build
+cd client
+flutter build web --release --dart-define=API_BASE_URL=http://localhost:3000 --dart-define=WEBSOCKET_URL=http://localhost:3000
+
+# Serve
+cd build/web
+python -m http.server 8080
+# Or use any static file server
 ```
 
-Or use Railway's CLI:
-```bash
-railway run npm run migrate
-```
+## Notes
 
-## Cost Estimate (Indie-Friendly)
-
-**Free Tier Setup:**
-- Supabase PostgreSQL: Free (up to 500MB)
-- Upstash Redis: Free (10K commands/day)
-- Railway Server: $5 credit/month (usually free for small projects)
-
-**Total: ~$0-5/month for development**
-
-**Production (when scaling):**
-- Database: $10-25/month
-- Redis: $10-20/month
-- Server: $10-50/month (scales with usage)
-
-**Total: ~$30-95/month for small production**
-
-## Security Notes
-
-1. **Never commit `.env` files** - Use `.env.example` as template
-2. **Use strong JWT_SECRET** - Generate with: `openssl rand -base64 32`
-3. **Enable SSL for databases** - Most cloud providers do this automatically
-4. **Use environment variables** - Never hardcode secrets
-5. **Rotate secrets regularly** - Especially in production
-
-## Monitoring
-
-Most cloud providers offer:
-- Logs dashboard
-- Metrics (CPU, memory, requests)
-- Error tracking
-- Uptime monitoring
-
-Set up alerts for:
-- Server crashes
-- Database connection failures
-- High error rates
+- WebSocket connections require HTTPS in production
+- Update CORS settings to match your frontend domain
+- Database and Redis need to be set up separately (Railway offers add-ons)
+- For MVP, you can skip database/Redis and use in-memory storage
 

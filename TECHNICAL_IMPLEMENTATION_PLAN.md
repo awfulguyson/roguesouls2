@@ -1,11 +1,12 @@
 # Technical Implementation Plan: Roguelike MMO (RogueSouls)
 
 ## Document Version
-- **Version**: 1.1
+- **Version**: 2.0
 - **Date**: 2024
 - **Target Team Size**: 1-5 developers
-- **Platform**: PC (Windows), Steam distribution
+- **Platform**: Web (initial), Steam distribution (future)
 - **Game Type**: Roguelike MMO with shared world
+- **Tech Stack**: Flutter (Dart) for client, Node.js for backend
 
 ---
 
@@ -45,12 +46,12 @@ This document outlines a technical implementation plan for building **RogueSouls
 - **Maintainability**: Clean architecture, comprehensive documentation, version control
 
 **Core Technology Decisions:**
-- **Game Engine**: Unity 2022 LTS (C#)
+- **Game Engine**: Flutter (Dart) - Web-based initially, packaged for Steam later
 - **Backend**: Node.js + TypeScript (Express/Fastify)
 - **Database**: PostgreSQL (primary) + Redis (caching/sessions)
-- **Networking**: Unity Netcode for GameObjects (UNet) or Mirror Networking
+- **Networking**: WebSocket (Socket.io or ws) for real-time multiplayer
 - **Hosting**: AWS/GCP with containerized deployment (Docker + Kubernetes)
-- **Steam SDK**: Unity Steamworks.NET
+- **Steam Integration**: Flutter Steam integration (flutter_steam or custom implementation)
 
 **Key Architectural Principles:**
 1. Server-authoritative game logic
@@ -96,7 +97,7 @@ This document outlines a technical implementation plan for building **RogueSouls
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLIENT LAYER                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ Unity Client │  │ Steam Client │  │  Web Browser │      │
+│  │ Flutter Web  │  │ Steam Client │  │  Web Browser │      │
 │  │   (Game)     │  │   (Auth)     │  │  (Account)   │      │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
 │         │                 │                  │              │
@@ -139,9 +140,9 @@ This document outlines a technical implementation plan for building **RogueSouls
 ### Component Responsibilities
 
 **Client Layer:**
-- Unity game client (rendering, input, local prediction)
-- Steam client (authentication, ownership verification)
-- Web browser (account creation, character management)
+- Flutter web client (rendering, input, local prediction)
+- Steam client (authentication, ownership verification) - for Steam builds
+- Web browser (account creation, character management, game client)
 
 **API Gateway:**
 - Request routing
@@ -171,21 +172,22 @@ This document outlines a technical implementation plan for building **RogueSouls
 
 ## Technology Stack
 
-### Game Engine: Unity 2022 LTS
+### Game Engine: Flutter (Dart)
 
 **Justification:**
-- **Mature ecosystem**: Extensive asset store, community support
-- **C# development**: Type-safe, performant, familiar to many developers
-- **Steam integration**: Official Steamworks.NET plugin available
-- **Networking**: Built-in UNet or Mirror Networking (open-source, actively maintained)
-- **2D/Isometric support**: Excellent sprite rendering, tilemap system
-- **Cross-platform**: Easy porting to Mac/Linux later
-- **Asset pipeline**: Built-in sprite import, animation tools
-- **Performance**: Optimized for real-time games, good profiling tools
+- **Web-first development**: Build for web initially, test multiplayer easily
+- **Single codebase**: Same codebase for web and desktop (Steam packaging)
+- **Dart language**: Type-safe, performant, modern language
+- **Rich ecosystem**: Extensive package ecosystem (pub.dev)
+- **2D rendering**: Excellent support for 2D sprites, animations, and canvas rendering
+- **Hot reload**: Fast iteration during development
+- **Steam packaging**: Can package Flutter web app for Steam using Electron or native desktop builds
+- **Cross-platform**: Web, Windows, Mac, Linux from single codebase
+- **Real-time networking**: Excellent WebSocket support for multiplayer
 
 **Alternatives Considered:**
-- **Godot**: Open-source, lightweight, but smaller ecosystem
-- **Unreal Engine**: Overkill for 2D sprite game, steeper learning curve
+- **Unity**: More mature game engine, but requires separate builds for web/desktop
+- **Godot**: Good for games, but web export less mature
 - **Custom Engine**: Too time-consuming for indie team
 
 ### Backend: Node.js + TypeScript
@@ -231,25 +233,26 @@ This document outlines a technical implementation plan for building **RogueSouls
 - **Sessions**: Redis (ephemeral, fast)
 - **Player state**: Hybrid (PostgreSQL for persistence, Redis for active sessions)
 
-### Networking: Mirror Networking (Unity)
+### Networking: WebSocket (Socket.io or ws)
 
 **Justification:**
-- **Open-source**: Free, community-maintained fork of UNet
-- **Unity integration**: Native Unity component system
-- **Authoritative server**: Built-in server authority patterns
-- **Client prediction**: Reduces perceived latency
-- **Scalability**: Supports multiple server instances
-- **Documentation**: Good community resources
+- **Web-native**: Perfect for web-based game client
+- **Real-time**: Low-latency bidirectional communication
+- **Cross-platform**: Works on web, desktop, and mobile
+- **Mature libraries**: Socket.io (rooms, namespaces) or ws (lightweight)
+- **Authoritative server**: Server controls all game state
+- **Client prediction**: Can implement client-side prediction in Flutter
+- **Scalability**: Supports multiple server instances, room-based architecture
 
 **Protocol:**
-- **Transport**: TCP (reliable) + UDP (unreliable for non-critical updates)
-- **Message format**: Binary serialization (MessagePack or Protocol Buffers)
-- **Compression**: Snappy or LZ4 for large payloads
+- **Transport**: WebSocket (WSS for secure)
+- **Message format**: JSON (easy debugging) or Binary (MessagePack for efficiency)
+- **Compression**: Built-in WebSocket compression or custom compression
 
 **Alternatives:**
-- **Unity Netcode for GameObjects**: Official but newer, less mature
-- **Photon**: Commercial, good but adds cost
-- **Custom**: Too time-consuming
+- **Custom TCP/UDP**: More control but requires native plugins
+- **gRPC-Web**: More complex, overkill for game networking
+- **Server-Sent Events**: One-way only, not suitable for games
 
 ### Hosting Infrastructure
 
@@ -284,7 +287,7 @@ This document outlines a technical implementation plan for building **RogueSouls
 - **Deployment**: Blue-green or rolling updates
 
 **Pipeline Stages:**
-1. **Build**: Compile Unity project, build Docker images
+1. **Build**: Build Flutter web project, build Docker images
 2. **Test**: Run automated tests
 3. **Deploy Staging**: Deploy to staging environment
 4. **Deploy Production**: Manual approval → deploy to production
@@ -293,88 +296,102 @@ This document outlines a technical implementation plan for building **RogueSouls
 
 **Tools:**
 - **Sprite creation**: Aseprite, Photoshop, or GIMP
-- **Animation**: Unity Animator, Aseprite timeline
-- **Tilemaps**: Unity Tilemap system
+- **Animation**: Flutter animation framework, Aseprite timeline
+- **Tilemaps**: Custom tilemap system or flutter_tile_map package
 - **Version control**: Git LFS for large assets
-- **Compression**: Unity texture compression, sprite atlasing
+- **Compression**: Web-optimized image formats (WebP), sprite atlasing
 
 ---
 
 ## Client Architecture
 
-### Unity Project Structure
+### Flutter Project Structure
 
 ```
-Assets/
-├── Scripts/
-│   ├── Core/
-│   │   ├── GameManager.cs          # Main game loop
-│   │   ├── NetworkManager.cs        # Network connection handling
-│   │   └── SceneManager.cs          # Scene transitions
-│   ├── Player/
-│   │   ├── PlayerController.cs      # Movement, input
-│   │   ├── PlayerCombat.cs          # Combat logic (client prediction)
-│   │   ├── PlayerStats.cs           # HP, MP, stats
-│   │   └── PlayerInventory.cs       # Inventory management
-│   ├── Combat/
-│   │   ├── CombatSystem.cs          # Damage calculation (client)
-│   │   ├── SkillSystem.cs           # Skills, cooldowns
-│   │   └── HitDetection.cs          # Raycast/overlap checks
-│   ├── UI/
-│   │   ├── UIManager.cs             # UI lifecycle
-│   │   ├── ActionBar.cs             # Hotkey bars
-│   │   ├── InventoryUI.cs           # Inventory display
-│   │   ├── ChatUI.cs                # Chat window
-│   │   └── HealthManaBar.cs         # HP/MP display
-│   ├── World/
-│   │   ├── CameraController.cs      # Isometric camera, zoom
-│   │   ├── TilemapManager.cs        # World rendering
-│   │   └── EnemySpawner.cs          # Enemy spawning (server-driven)
-│   ├── Networking/
-│   │   ├── NetworkClient.cs         # Mirror networking wrapper
-│   │   ├── MessageHandlers.cs       # Message deserialization
-│   │   └── SteamAuth.cs             # Steam authentication
-│   └── Data/
-│       ├── ScriptableObjects/       # Game data (items, skills)
-│       └── Serialization/           # MessagePack, JSON
-├── Scenes/
-│   ├── MainMenu.unity
-│   ├── CharacterSelect.unity
-│   ├── CharacterCreation.unity
-│   └── GameWorld.unity
-├── Prefabs/
-│   ├── Player/
-│   ├── Enemies/
-│   └── UI/
-└── Resources/
-    ├── Sprites/
-    └── Audio/
+lib/
+├── main.dart                        # Entry point
+├── core/
+│   ├── game_manager.dart            # Main game loop
+│   ├── network_manager.dart         # WebSocket connection handling
+│   └── scene_manager.dart           # Scene/routes transitions
+├── models/
+│   ├── player.dart                  # Player data model
+│   ├── character.dart               # Character data model
+│   ├── item.dart                    # Item data model
+│   └── skill.dart                   # Skill data model
+├── services/
+│   ├── auth_service.dart            # Authentication (login)
+│   ├── game_service.dart            # Game state management
+│   └── network_service.dart         # WebSocket service
+├── screens/
+│   ├── login_screen.dart            # Login page
+│   ├── character_select_screen.dart # Character selection
+│   ├── character_creation_screen.dart # Character creation
+│   └── game_world_screen.dart       # Main game screen
+├── widgets/
+│   ├── player/
+│   │   ├── player_widget.dart      # Player rendering
+│   │   └── player_controller.dart   # Movement, input
+│   ├── world/
+│   │   ├── game_world.dart          # World rendering
+│   │   ├── camera_controller.dart   # Isometric camera, zoom
+│   │   └── tilemap_widget.dart      # Tilemap rendering
+│   ├── ui/
+│   │   ├── health_mana_bar.dart     # HP/MP display
+│   │   ├── action_bar.dart          # Hotkey bars
+│   │   ├── inventory_ui.dart        # Inventory display
+│   │   ├── chat_ui.dart             # Chat window
+│   │   └── skill_choice_ui.dart     # Skill choice modal
+│   └── enemies/
+│       └── enemy_widget.dart        # Enemy rendering
+├── networking/
+│   ├── websocket_client.dart        # WebSocket client wrapper
+│   ├── message_handlers.dart        # Message deserialization
+│   └── steam_auth.dart              # Steam authentication (for Steam builds)
+├── data/
+│   ├── game_data.dart               # Game data (items, skills)
+│   └── serialization.dart           # JSON/MessagePack serialization
+└── utils/
+    ├── constants.dart               # Game constants
+    └── helpers.dart                 # Utility functions
+
+assets/
+├── sprites/
+│   ├── player/
+│   ├── enemies/
+│   └── items/
+├── audio/
+└── data/
+    └── game_data.json               # Static game data
 ```
 
 ### Client-Side Systems
 
 #### 1. Input System
-- **Unity Input System**: New input system for WASD, mouse, hotkeys
-- **Action mapping**: Configurable keybindings
+- **Flutter GestureDetector/Listener**: Handle keyboard (WASD) and mouse input
+- **Action mapping**: Configurable keybindings stored in state
 - **Input buffering**: Queue actions during network lag
+- **Web support**: Keyboard and mouse events work natively in web
 
 #### 2. Rendering System
-- **Sprite Renderer**: 2D sprites for characters, enemies
-- **Sorting Layers**: Proper z-ordering for isometric view
-- **Camera**: Orthographic camera with zoom (mouse wheel)
-- **Tilemap**: Unity Tilemap for world rendering
+- **CustomPainter/Canvas**: 2D sprite rendering using Flutter's canvas API
+- **Sprite sheets**: Load and render sprite animations
+- **Z-ordering**: Proper layering for isometric view (sort by Y position)
+- **Camera**: Transform matrix for camera position and zoom (mouse wheel)
+- **Tilemap**: Custom tilemap rendering or use flutter_tile_map package
 
 #### 3. Network Client
-- **Connection management**: Connect to game server via WebSocket
-- **Message serialization**: Binary format (MessagePack)
-- **Client prediction**: Predict movement/combat locally
-- **Server reconciliation**: Correct prediction errors
-- **Interpolation**: Smooth other players' movement
+- **WebSocket connection**: Connect to game server via WebSocket (socket_io_client or web_socket_channel)
+- **Message serialization**: JSON (easy) or Binary (MessagePack via msgpack_dart)
+- **Client prediction**: Predict movement/combat locally before server confirmation
+- **Server reconciliation**: Correct prediction errors when server state arrives
+- **Interpolation**: Smooth other players' movement between updates
 
 #### 4. Local State Management
-- **Player state**: Current position, HP, MP, inventory (cached)
-- **World state**: Nearby players, enemies (server-authoritative)
-- **UI state**: Open windows, selected targets
+- **State management**: Provider, Riverpod, or Bloc for state management
+- **Player state**: Current position, HP, MP, inventory (cached locally)
+- **World state**: Nearby players, enemies (server-authoritative, synced via WebSocket)
+- **UI state**: Open windows, selected targets (local state)
 
 ### Client-Server Communication Flow
 
@@ -795,7 +812,7 @@ presence:account:{accountId} = {
 
 ```
 ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Steam   │────▶│  Unity   │────▶│   Auth   │────▶│   Game   │
+│  Steam   │────▶│ Flutter  │────▶│   Auth   │────▶│   Game   │
 │  Client  │     │  Client  │     │ Service  │     │  Server  │
 └──────────┘     └──────────┘     └──────────┘     └──────────┘
      │                │                  │                │
@@ -829,14 +846,26 @@ presence:account:{accountId} = {
 
 ### Detailed Steps
 
-**1. Steam Launch:**
-- Player launches game from Steam
-- Unity client initializes Steamworks.NET
+**1. Web Login (Initial MVP):**
+- Player visits web URL
+- Simple email/password login or guest login for testing
+- Client obtains JWT token
+
+**2. Steam Launch (Future):**
+- Player launches game from Steam (packaged Flutter app)
+- Flutter client initializes Steam integration
 - Client obtains Steam authentication ticket
 
-**2. Authentication Request:**
-```typescript
-// Client sends to Auth Service
+**3. Authentication Request:**
+```dart
+// Flutter client sends to Auth Service
+POST /api/auth/login
+{
+    email: string,
+    password: string
+}
+
+// Or for Steam (future):
 POST /api/auth/steam
 {
     steamTicket: string,  // Steam authentication ticket
@@ -871,8 +900,9 @@ GET https://api.steampowered.com/ISteamUserAuth/AuthenticateUserTicket/v1/
 
 **6. Character Selection:**
 - Client requests character list: `GET /api/characters?accountId={id}`
-- If no characters → show character creation
+- If no characters → show character creation screen
 - If characters exist → show character select screen
+- **MVP Focus**: Simple character creation with name only (playstyle can be added later)
 
 **7. Character Creation Flow:**
 - Player enters character name
@@ -911,47 +941,39 @@ GET https://api.steampowered.com/ISteamUserAuth/AuthenticateUserTicket/v1/
 
 ---
 
-## Steam Integration
+## Steam Integration (Future - Post-MVP)
 
 ### Steam SDK Setup
 
-**Unity Package**: Steamworks.NET
-- Download from: https://steamworks.github.io/
-- Add to Unity project
-- Configure Steam App ID in project settings
+**Flutter Package**: Custom Steam integration or native plugin
+- For web: Not applicable (Steam is desktop-only)
+- For desktop: Use native Steamworks SDK via Flutter FFI or platform channels
+- Alternative: Package Flutter web app with Electron and integrate Steam
 
 ### Required Steam Features
 
 #### 1. Steam App ID
 - Register game on Steamworks
 - Obtain App ID
-- Configure in Unity: `SteamManager.cs`
+- Configure in Flutter: Environment variables or config file
 
-#### 2. Steam Authentication
-```csharp
-// Unity Client
-using Steamworks;
+#### 2. Steam Authentication (Desktop Only)
+```dart
+// Flutter Client (Desktop build)
+import 'dart:ffi'; // For native Steamworks integration
 
-public class SteamAuth : MonoBehaviour {
-    void Start() {
-        if (!SteamManager.Initialized) {
-            Debug.LogError("Steam not initialized");
-            return;
-        }
-        
-        // Get Steam ID
-        CSteamID steamId = SteamUser.GetSteamID();
-        
-        // Get authentication ticket
-        byte[] ticket = new byte[1024];
-        uint ticketSize;
-        SteamUser.GetAuthSessionTicket(ticket, 1024, out ticketSize);
-        
-        // Send to backend
-        SendAuthToBackend(steamId, ticket);
-    }
+class SteamAuth {
+  // Initialize Steam (requires native plugin or FFI)
+  Future<void> initialize() async {
+    // Call native Steamworks SDK
+    // Get Steam ID
+    // Get authentication ticket
+    // Send to backend
+  }
 }
 ```
+
+**Note**: For MVP, focus on web-based login. Steam integration can be added later when packaging for Steam.
 
 #### 3. Steam Ownership Verification
 ```typescript
@@ -972,35 +994,43 @@ async function validateSteamOwnership(steamId: number, appId: number): Promise<b
 - Enable Steam overlay in Unity
 - Players can access Steam friends, achievements (future)
 
-### Steam Build Pipeline
+### Steam Build Pipeline (Future)
 
-**SteamCMD Integration:**
-- Automated builds upload to Steam
+**Flutter Web to Desktop:**
+- Option 1: Package Flutter web app with Electron
+- Option 2: Build Flutter desktop app (Windows/Mac/Linux)
 - Set up depots for game content
 - Configure update channels (beta, release)
 
 **CI/CD Integration:**
 ```yaml
 # GitHub Actions example
-- name: Build Unity Project
+- name: Build Flutter Web
   run: |
-    Unity -batchmode -quit -projectPath . -buildTarget Win64 -executeMethod BuildScript.BuildSteam
+    flutter build web --release
+
+- name: Package for Steam (Electron)
+  run: |
+    # Package web build with Electron
+    # Include Steam integration
 
 - name: Upload to Steam
   run: |
     steamcmd +login $STEAM_USER $STEAM_PASS +app_build $APP_ID +quit
 ```
 
-### Steam Requirements Checklist
+### Steam Requirements Checklist (Future - Post-MVP)
 
 - [ ] Steam App ID configured
 - [ ] Steam authentication implemented
 - [ ] Ownership verification enforced
-- [ ] Steam overlay enabled
-- [ ] Build pipeline configured
+- [ ] Steam overlay enabled (if using Electron or native desktop)
+- [ ] Build pipeline configured (Flutter web → Electron/Desktop)
 - [ ] Steam DRM (optional, for anti-piracy)
 - [ ] Steam achievements (future)
 - [ ] Steam leaderboards (future)
+
+**MVP Focus**: Web-based login only. Steam integration deferred to post-MVP phase.
 
 ---
 
@@ -1417,28 +1447,41 @@ UI/
 ### Action Bar System
 
 **Hotkey Binding:**
-```csharp
-// Unity Input System
-public class ActionBar : MonoBehaviour {
-    private Dictionary<KeyCode, int> keyBindings = new Dictionary<KeyCode, int> {
-        { KeyCode.Alpha1, 0 },
-        { KeyCode.Alpha2, 1 },
-        // ... etc
-    };
-    
-    void Update() {
-        foreach (var binding in keyBindings) {
-            if (Input.GetKeyDown(binding.Key)) {
-                bool ctrl = Input.GetKey(KeyCode.LeftControl);
-                bool shift = Input.GetKey(KeyCode.LeftShift);
-                
-                int barIndex = ctrl ? 1 : (shift ? 2 : 0);
-                int slotIndex = binding.Value;
-                
-                UseSkill(barIndex, slotIndex);
-            }
+```dart
+// Flutter
+class ActionBar extends StatefulWidget {
+  @override
+  _ActionBarState createState() => _ActionBarState();
+}
+
+class _ActionBarState extends State<ActionBar> {
+  final Map<LogicalKeyboardKey, int> keyBindings = {
+    LogicalKeyboardKey.digit1: 0,
+    LogicalKeyboardKey.digit2: 1,
+    // ... etc
+  };
+  
+  @override
+  Widget build(BuildContext context) {
+    return KeyboardListener(
+      focusNode: FocusNode(),
+      onKeyEvent: (event) {
+        if (event is KeyDownEvent) {
+          final key = event.logicalKey;
+          if (keyBindings.containsKey(key)) {
+            final ctrl = HardwareKeyboard.instance.isControlPressed;
+            final shift = HardwareKeyboard.instance.isShiftPressed;
+            
+            final barIndex = ctrl ? 1 : (shift ? 2 : 0);
+            final slotIndex = keyBindings[key]!;
+            
+            useSkill(barIndex, slotIndex);
+          }
         }
-    }
+      },
+      child: // Action bar UI
+    );
+  }
 }
 ```
 
@@ -1495,27 +1538,47 @@ socket.on('chat_message', (data) => {
 - Server assigns skill to character
 
 **Implementation:**
-```csharp
-// Unity C#
-public class SkillChoiceWindow : MonoBehaviour {
-    [SerializeField] private SkillOptionUI option1;
-    [SerializeField] private SkillOptionUI option2;
-    [SerializeField] private SkillOptionUI option3;
-    
-    public void ShowSkillChoices(SkillTemplate[] skills) {
-        gameObject.SetActive(true);
-        option1.SetSkill(skills[0]);
-        option2.SetSkill(skills[1]);
-        option3.SetSkill(skills[2]);
-    }
-    
-    public void OnSkillSelected(int index) {
-        // Send selection to server
-        NetworkClient.Send(new SkillChoiceMessage { 
-            selectedSkillId = skills[index].id 
-        });
-        gameObject.SetActive(false);
-    }
+```dart
+// Flutter
+class SkillChoiceWindow extends StatelessWidget {
+  final List<SkillTemplate> skills;
+  final Function(String skillId) onSkillSelected;
+  
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      child: Row(
+        children: [
+          SkillOptionCard(
+            skill: skills[0],
+            onTap: () => onSkillSelected(skills[0].id),
+          ),
+          SkillOptionCard(
+            skill: skills[1],
+            onTap: () => onSkillSelected(skills[1].id),
+          ),
+          SkillOptionCard(
+            skill: skills[2],
+            onTap: () => onSkillSelected(skills[2].id),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  void showSkillChoices(BuildContext context, List<SkillTemplate> skills) {
+    showDialog(
+      context: context,
+      builder: (context) => SkillChoiceWindow(
+        skills: skills,
+        onSkillSelected: (skillId) {
+          // Send selection to server via WebSocket
+          networkService.sendSkillChoice(skillId);
+          Navigator.of(context).pop();
+        },
+      ),
+    );
+  }
 }
 ```
 
@@ -1716,56 +1779,49 @@ spec:
 
 ## Development Roadmap
 
-### Phase 1: Foundation (Weeks 1-4)
+### Phase 1: Foundation (Weeks 1-4) - MVP Focus: Login & Game Space
 
 **Week 1-2: Project Setup**
-- [ ] Set up Unity project
+- [ ] Set up Flutter project (web configuration)
 - [ ] Set up backend project (Node.js)
 - [ ] Configure database (PostgreSQL + Redis)
 - [ ] Set up version control (Git)
-- [ ] Create basic project structure
+- [ ] Create basic Flutter project structure
 - [ ] Set up CI/CD pipeline (basic)
 
-**Week 3-4: Authentication & Account System**
-- [ ] Implement website account creation
-- [ ] Implement Steam authentication
+**Week 3-4: Authentication & Basic Game Space**
+- [ ] Implement simple login system (email/password or guest login for testing)
 - [ ] Implement JWT token system
-- [ ] Implement character creation (name + playstyle selection)
-- [ ] Implement starting skill choice system (3 choices based on playstyle)
+- [ ] Implement basic character creation (name only - playstyle can be added later)
 - [ ] Implement character selection
-- [ ] Test authentication flow end-to-end
+- [ ] Create simple game world (basic tilemap or canvas)
+- [ ] Implement basic player rendering (simple sprite or colored rectangle)
+- [ ] Implement basic movement (WASD keys)
+- [ ] Test login and basic game space in browser
 
-**Deliverable**: Players can create accounts, log in via Steam, create characters with playstyle, and receive starting skills
+**Deliverable**: Players can log in, create a character, and see a simple game space where they can move around. Focus on testing multiplayer and gamespace functionality.
 
-### Phase 2: Core Gameplay (Weeks 5-10)
+### Phase 2: Multiplayer & Game Space Testing (Weeks 5-8)
 
-**Week 5-6: Basic World & Movement**
-- [ ] Create isometric camera system
-- [ ] Implement tile-based world
-- [ ] Implement player movement (WASD)
+**Week 5-6: Multiplayer Foundation**
+- [ ] Implement WebSocket connection to game server
+- [ ] Implement player position synchronization (multiple players visible)
 - [ ] Implement server-client movement sync
-- [ ] Add basic sprites for player
-- [ ] Test multiplayer movement
+- [ ] Add player name labels above characters
+- [ ] Test multiple players in same game space
+- [ ] Implement basic camera system (follow player, zoom)
 
-**Week 7-8: Combat System**
-- [ ] Implement basic enemy AI
-- [ ] Implement melee combat
-- [ ] Implement server-authoritative damage calculation
-- [ ] Implement HP/MP system
-- [ ] Add combat animations/effects
-- [ ] Test combat in multiplayer
+**Week 7-8: Enhanced Game Space**
+- [ ] Improve world rendering (better tilemap or canvas graphics)
+- [ ] Add basic collision detection (walls, boundaries)
+- [ ] Implement simple chat system (see other players' messages)
+- [ ] Add visual feedback for player actions
+- [ ] Test multiplayer interactions (players can see each other move)
+- [ ] Performance testing with multiple concurrent players
 
-**Week 9-10: UI Systems**
-- [ ] Implement health/mana bars
-- [ ] Implement action bars (basic)
-- [ ] Implement target selection
-- [ ] Implement chat system (basic)
-- [ ] Implement inventory UI
-- [ ] Test UI interactions
+**Deliverable**: Multiple players can log in, see each other in the game space, move around, and interact. Core multiplayer and gamespace functionality is working.
 
-**Deliverable**: Players can move, fight enemies, use basic UI
-
-### Phase 3: Advanced Features (Weeks 11-16)
+### Phase 3: Advanced Features (Weeks 9-16) - Post-MVP
 
 **Week 11-12: Roguelike Systems & Skill Discovery**
 - [ ] Implement death/respawn system (reset level, keep stats)
@@ -1802,25 +1858,26 @@ spec:
 
 **Deliverable**: Full combat loop with skills, loot, inventory
 
-### Phase 4: Steam Integration & Launch Prep (Weeks 17-20)
+### Phase 4: Steam Packaging & Launch Prep (Weeks 17-20)
 
-**Week 17-18: Steam Integration**
-- [ ] Set up Steam App ID
-- [ ] Implement Steam authentication
-- [ ] Implement ownership verification
-- [ ] Test Steam overlay
-- [ ] Set up Steam build pipeline
-- [ ] Create Steam store page (draft)
+**Week 17-18: Steam Packaging**
+- [ ] Research Flutter web to desktop packaging (Electron or native)
+- [ ] Set up Steam App ID (if ready)
+- [ ] Package Flutter web app for Windows desktop
+- [ ] Test desktop build locally
+- [ ] Set up Steam build pipeline (if applicable)
+- [ ] Create Steam store page (draft) - optional for MVP
 
 **Week 19-20: Testing & Launch**
-- [ ] Load testing (100+ concurrent players)
+- [ ] Load testing (multiple concurrent players in web version)
 - [ ] Security audit
 - [ ] Bug fixing
 - [ ] Documentation
 - [ ] Prepare launch materials
-- [ ] Soft launch (closed beta)
+- [ ] Web deployment (host game on web server)
+- [ ] Soft launch (closed beta) - web-based initially
 
-**Deliverable**: Game ready for Steam Early Access
+**Deliverable**: Game playable on web, ready for testing. Steam packaging can be refined post-MVP.
 
 ### Post-Launch Roadmap
 
@@ -1866,11 +1923,11 @@ spec:
 
 #### 3. Gameplay Programmer
 - **Responsibilities**:
-  - Unity client development
+  - Flutter client development
   - Gameplay systems (combat, movement)
   - UI implementation
   - Client-server integration
-- **Skills**: Unity, C#, game development, networking
+- **Skills**: Flutter, Dart, game development, networking
 
 #### 4. Game Designer / Programmer
 - **Responsibilities**:
@@ -1886,7 +1943,7 @@ spec:
   - Animation
   - UI art
   - Asset optimization
-- **Skills**: 2D art, pixel art, animation, Unity integration
+- **Skills**: 2D art, pixel art, animation, web-optimized assets
 
 ### Smaller Team Adaptations
 
@@ -1937,14 +1994,14 @@ spec:
 - **Probability**: Medium
 - **Impact**: High
 
-#### 4. Steam Integration Issues
-- **Risk**: Authentication failures, build pipeline problems
+#### 4. Steam Integration Issues (Post-MVP)
+- **Risk**: Authentication failures, build pipeline problems, Flutter web to desktop packaging challenges
 - **Mitigation**:
-  - Test Steam integration early
-  - Follow Steam documentation closely
-  - Have fallback authentication (optional)
-- **Probability**: Low
-- **Impact**: Medium
+  - Test Steam integration when ready (not needed for MVP)
+  - Research Flutter packaging options early (Electron vs native)
+  - Have web-based fallback (primary for MVP)
+- **Probability**: Medium (packaging complexity)
+- **Impact**: Medium (not blocking MVP)
 
 ### Business Risks
 
@@ -2004,12 +2061,12 @@ spec:
 **Scale: 1 (Trivial) - 10 (Extremely Complex)**
 
 #### Client-Side Systems
-- **Input System**: 3/10 (Unity Input System handles most)
-- **Rendering System**: 4/10 (Unity 2D systems)
+- **Input System**: 4/10 (Flutter keyboard/mouse handling, requires some setup)
+- **Rendering System**: 5/10 (Custom canvas rendering or packages, more manual than Unity)
 - **Movement System**: 5/10 (Client prediction adds complexity)
-- **Combat System (Client)**: 6/10 (Prediction, animation sync)
-- **UI System**: 5/10 (Multiple windows, state management)
-- **Network Client**: 7/10 (Message handling, reconciliation)
+- **Combat System (Client)**: 6/10 (Prediction, animation sync) - Post-MVP
+- **UI System**: 4/10 (Flutter widgets, good but requires state management)
+- **Network Client**: 7/10 (WebSocket message handling, reconciliation)
 
 #### Server-Side Systems
 - **Authentication Service**: 4/10 (Standard JWT + Steam)
@@ -2026,21 +2083,21 @@ spec:
 - **Kubernetes Setup**: 7/10 (Complex orchestration)
 - **CI/CD Pipeline**: 5/10 (Configuration complexity)
 
-#### Steam Integration
-- **Steam Authentication**: 5/10 (Documentation can be unclear)
-- **Steam Build Pipeline**: 6/10 (SteamCMD, depots)
-- **Steam Overlay**: 3/10 (Unity plugin handles most)
+#### Steam Integration (Post-MVP)
+- **Steam Authentication**: 6/10 (Requires native integration or Electron wrapper)
+- **Steam Build Pipeline**: 7/10 (Flutter web → Electron/Desktop packaging)
+- **Steam Overlay**: 5/10 (Requires native integration)
 
 ### Development Time Estimates
 
 **Per Developer, Full-Time:**
 
-- **Phase 1 (Foundation)**: 4 weeks
-- **Phase 2 (Core Gameplay)**: 6 weeks
-- **Phase 3 (Advanced Features)**: 6 weeks
-- **Phase 4 (Steam & Launch)**: 4 weeks
+- **Phase 1 (Foundation - Login & Game Space)**: 4 weeks
+- **Phase 2 (Multiplayer & Game Space Testing)**: 4 weeks
+- **Phase 3 (Advanced Features)**: 6 weeks (post-MVP)
+- **Phase 4 (Steam Packaging & Launch)**: 4 weeks (post-MVP)
 
-**Total: ~20 weeks (5 months) for MVP**
+**Total: ~8 weeks (2 months) for MVP (login + multiplayer game space)**
 
 *Note: These are optimistic estimates. Add 20-30% buffer for unexpected issues.*
 
@@ -2050,7 +2107,7 @@ spec:
 
 ### Assumptions
 
-1. **Team has Unity experience**: If not, add 2-4 weeks for learning
+1. **Team has Flutter/Dart experience**: If not, add 2-4 weeks for learning
 2. **Team has backend experience**: If not, add 2-4 weeks for learning
 3. **Art assets available**: Either team member or asset store
 4. **Steam approval granted**: Assumes game meets Steam requirements
@@ -2059,15 +2116,16 @@ spec:
 
 ### Tradeoffs
 
-#### 1. Unity vs Custom Engine
-- **Unity**: Faster development, larger asset pool, but less control
+#### 1. Flutter vs Unity vs Custom Engine
+- **Flutter**: Web-first, single codebase for web/desktop, good for rapid iteration
+- **Unity**: More mature game engine, but requires separate builds for web/desktop
 - **Custom**: Full control, but much longer development time
-- **Decision**: Unity (faster iteration for indie team)
+- **Decision**: Flutter (web-first approach, easier multiplayer testing, can package for Steam later)
 
 #### 2. Node.js vs C# Backend
-- **Node.js**: Fast development, large ecosystem, but single-threaded
-- **C#/.NET**: Better performance, familiar to Unity devs, but heavier
-- **Decision**: Node.js (faster iteration, can optimize later)
+- **Node.js**: Fast development, large ecosystem, excellent WebSocket support
+- **C#/.NET**: Better performance, but heavier infrastructure
+- **Decision**: Node.js (faster iteration, excellent for real-time web games, can optimize later)
 
 #### 3. PostgreSQL vs NoSQL
 - **PostgreSQL**: ACID compliance, relational data, but requires schema
@@ -2095,29 +2153,30 @@ spec:
 
 ### MVP Scope (Launch-Ready)
 
-**Must Have:**
+**Must Have (MVP - Focus on Login & Game Space):**
+- Simple login system (email/password or guest login for testing)
+- Character creation (name only - simplified for MVP)
+- Character selection
+- Basic movement (WASD)
+- Multiplayer visibility (see other players in game space)
+- Basic game world (simple tilemap or canvas)
+- WebSocket connection and synchronization
+- Basic chat (see other players' messages)
+- Server-authoritative movement
+
+**Nice to Have (Post-MVP):**
 - Steam authentication
 - Character creation with playstyle selection (Tank/DPS/Healing)
 - Starting skill choice system (3 choices based on playstyle)
-- Character selection
-- Basic movement (WASD)
 - Basic combat (melee + skills)
 - **Roguelike death system**: Death resets level to 1, keeps accumulated stats
 - **Accumulated stats system**: Stats persist through death
 - **Skill discovery system**: Skills found on ground, right-click for 3 choices
-- **Playstyle-based skill generation**: Skills match selected playstyle focus
-- **Playstyle change**: Can change playstyle anytime (affects future skill discoveries)
 - Enemy AI (basic)
-- Loot system (gold + items, 3-4 rarities)
-- Skill discovery item drops (from enemies, ~10% chance)
+- Loot system (gold + items)
 - Inventory (basic)
-- Chat (global + local)
 - Health/mana bars
-- Action bar (1 bar, 12 slots)
-- Skill choice UI (modal with 3 options)
-- 1-2 zones
-- 2-3 enemy types
-- Server-authoritative combat
+- Action bar
 - Skills persist through death
 
 **Nice to Have (Post-MVP):**
@@ -2163,44 +2222,46 @@ spec:
 
 1. **Review this document** with team
 2. **Set up development environment**:
-   - Install Unity 2022 LTS
+   - Install Flutter SDK (latest stable)
+   - Enable Flutter web support: `flutter config --enable-web`
    - Install Node.js 20 LTS
    - Set up PostgreSQL + Redis locally
    - Create GitHub/GitLab repository
 3. **Create project structure**:
-   - Initialize Unity project
+   - Initialize Flutter project: `flutter create --platforms web .`
    - Initialize Node.js project
    - Set up database schema
-4. **Register on Steamworks**:
-   - Create Steam partner account
-   - Register game
-   - Obtain App ID
+4. **Steam registration (optional for MVP)**:
+   - Can be deferred until ready to package for Steam
+   - Focus on web deployment first
 5. **Set up basic CI/CD**:
    - GitHub Actions or GitLab CI
-   - Basic build pipeline
+   - Basic Flutter web build pipeline
 
 ### Week 1-2 Goals
 
-1. **Unity Project Setup**:
-   - Create basic scene
-   - Set up camera (isometric)
-   - Create player sprite (placeholder)
-   - Implement basic movement (WASD)
+1. **Flutter Project Setup**:
+   - Create Flutter project with web support
+   - Set up basic game screen
+   - Create simple player widget (colored rectangle or sprite)
+   - Implement basic movement (WASD) with keyboard input
+   - Set up basic camera/viewport
 
 2. **Backend Setup**:
    - Set up Express/Fastify server
    - Connect to PostgreSQL
    - Connect to Redis
-   - Create basic API endpoints (health check, etc.)
+   - Create basic API endpoints (health check, login, character creation)
+   - Set up WebSocket server (Socket.io or ws)
 
 3. **Database Setup**:
    - Create accounts table
-   - Create characters table
+   - Create characters table (simplified for MVP)
    - Run migrations
 
 4. **Version Control**:
    - Initialize Git repository
-   - Set up .gitignore
+   - Set up .gitignore (include Flutter build artifacts)
    - Create initial commit
 
 ### Questions to Answer Before Starting
@@ -2217,15 +2278,15 @@ spec:
 
 ### Technical Questions
 
-1. **Networking Library**: Do you have a preference between Mirror Networking and Unity Netcode for GameObjects? Mirror is more mature, but UNGO is official.
+1. **WebSocket Library**: Do you have a preference between Socket.io and ws? Socket.io has more features (rooms, namespaces), ws is lighter.
 
 2. **Database Hosting**: Do you prefer managed databases (RDS, Cloud SQL) or self-hosted? Managed is easier but more expensive.
 
-3. **Art Assets**: Do you have an artist, or will you use asset store? This affects timeline.
+3. **Art Assets**: Do you have an artist, or will you use placeholder graphics? For MVP, simple colored shapes are fine.
 
 4. **Zone Design**: Should zones be instanced (separate copies) or shared (all players in same world)? Instanced is easier to scale.
 
-5. **Combat Style**: Turn-based or real-time? (Assuming real-time based on Diablo 2)
+5. **Flutter State Management**: Do you prefer Provider, Riverpod, Bloc, or another state management solution?
 
 ### Business Questions
 
@@ -2255,7 +2316,7 @@ spec:
 
 ## Conclusion
 
-This technical implementation plan provides a comprehensive roadmap for building a Diablo-2 style MMORPG. The architecture is designed to be:
+This technical implementation plan provides a comprehensive roadmap for building a Diablo-2 style MMORPG using Flutter (web-based) with eventual Steam packaging. The architecture is designed to be:
 
 - **Scalable**: Can grow from 100 to 100,000+ players
 - **Maintainable**: Clean code, good documentation
@@ -2277,15 +2338,16 @@ This technical implementation plan provides a comprehensive roadmap for building
 ## Appendix: Useful Resources
 
 ### Documentation
-- [Unity Documentation](https://docs.unity3d.com/)
-- [Mirror Networking](https://mirror-networking.com/)
-- [Steamworks Documentation](https://partner.steamgames.com/doc/home)
+- [Flutter Documentation](https://docs.flutter.dev/)
+- [Flutter Web](https://docs.flutter.dev/platform-integration/web)
+- [Socket.io](https://socket.io/) - WebSocket library
+- [Steamworks Documentation](https://partner.steamgames.com/doc/home) - For future Steam integration
 - [Node.js Best Practices](https://github.com/goldbergyoni/nodebestpractices)
 - [PostgreSQL Documentation](https://www.postgresql.org/docs/)
 
 ### Tools
 - [Prisma](https://www.prisma.io/) - Type-safe ORM
-- [Socket.io](https://socket.io/) - WebSocket library
+- [Socket.io Client for Dart](https://pub.dev/packages/socket_io_client) or [web_socket_channel](https://pub.dev/packages/web_socket_channel)
 - [Winston](https://github.com/winstonjs/winston) - Logging
 - [Docker](https://www.docker.com/) - Containerization
 - [Kubernetes](https://kubernetes.io/) - Orchestration
@@ -2293,7 +2355,8 @@ This technical implementation plan provides a comprehensive roadmap for building
 ### Learning Resources
 - [Game Networking](https://gafferongames.com/) - Excellent networking tutorials
 - [MMO Architecture](https://www.gamedeveloper.com/) - Industry articles
-- [Unity Learn](https://learn.unity.com/) - Unity tutorials
+- [Flutter Game Development](https://docs.flutter.dev/games) - Flutter game development guide
+- [Flutter Canvas Tutorial](https://api.flutter.dev/flutter/dart-ui/Canvas-class.html) - For 2D rendering
 
 ---
 

@@ -1,59 +1,99 @@
-# RogueSouls - Roguelike MMO
+# RogueSouls - 2D MMORPG Roguelike
 
-A roguelike MMO with shared world, where death resets your level but your accumulated stats and skills persist.
+A web-based multiplayer roguelike game built with Flutter and Node.js.
 
 ## Project Structure
 
 ```
-RogueSouls/
-├── client/          # Unity game client
+roguesouls/
+├── client/          # Flutter web client
 ├── server/          # Node.js backend server
-└── docs/            # Documentation
+└── README.md
 ```
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
-- Unity 2022 LTS
-- Node.js 20 LTS
-- PostgreSQL 14+
-- Redis 7+
 
-### Development Setup
+- Flutter SDK (installed)
+- Node.js 20+ 
+- PostgreSQL (optional for MVP - using mock data)
+- Redis (optional for MVP)
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd RogueSouls
-   ```
+### 1. Start the Backend Server
 
-2. **Set up the backend**
-   ```bash
-   cd server
-   npm install
-   cp .env.example .env
-   # Edit .env with your database credentials
-   npm run migrate
-   npm run dev
-   ```
+```bash
+cd server
+npm install
+npm run dev
+```
 
-3. **Set up the Unity client**
-   - Open Unity Hub
-   - Open project from `client/` folder
-   - Install required packages (see client/README.md)
+The server will run on `http://localhost:3000`
 
-## Development Principles
+### 2. Start the Flutter Client
 
-- **Clean Code**: Remove obsolete code when fixing or removing features
-- **Incremental Development**: Add features one by one, ensure proper implementation
-- **Test as You Go**: Test each feature before moving to the next
-- **Documentation**: Keep code and architecture documentation up to date
+```bash
+cd client
+flutter pub get
+flutter run -d chrome
+```
 
-## Architecture
+### 3. Test Multiplayer
 
-See [TECHNICAL_IMPLEMENTATION_PLAN.md](./TECHNICAL_IMPLEMENTATION_PLAN.md) for detailed architecture and implementation details.
+1. Open the app in Chrome
+2. Login with any email/password (mock authentication)
+3. Create a character
+4. Open another browser tab/window
+5. Login with a different email
+6. Create another character
+7. Both players should see each other moving in the game world!
 
-## License
+## Controls
 
-[To be determined]
+- **WASD** or **Arrow Keys**: Move your character
+- Players are represented as colored rectangles:
+  - Red = You
+  - Blue = Other players
+
+## Current Features (MVP)
+
+- ✅ Simple login system
+- ✅ Character creation
+- ✅ Basic game world
+- ✅ Player movement (WASD)
+- ✅ Multiplayer synchronization (see other players)
+- ✅ WebSocket real-time communication
+
+## Next Steps
+
+- [ ] Add PostgreSQL database for persistent storage
+- [ ] Add Redis for session management
+- [ ] Implement proper authentication with JWT
+- [ ] Add chat system
+- [ ] Improve graphics (sprites instead of rectangles)
+- [ ] Add collision detection
+- [ ] Add enemies and combat
+
+## Development
+
+### Backend Development
+
+```bash
+cd server
+npm run dev  # Starts with nodemon (auto-reload)
+```
+
+### Flutter Development
+
+```bash
+cd client
+flutter run -d chrome  # Hot reload enabled
+```
+
+## Notes
+
+- The backend uses mock data for MVP testing
+- No database required for initial testing
+- WebSocket connection handles real-time multiplayer
+- CORS is currently open (`*`) - restrict in production
 
