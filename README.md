@@ -87,7 +87,7 @@ npm run dev  # Starts with nodemon (auto-reload)
 
 ```bash
 cd client
-flutter run -d chrome  # Hot reload enabled
+oa  # Hot reload enabled
 ```
 
 ## Notes

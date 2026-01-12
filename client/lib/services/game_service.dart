@@ -52,8 +52,12 @@ class GameService {
     });
   }
 
-  void joinGame(String characterId, String name) {
-    socket?.emit('player:join', {'characterId': characterId, 'name': name});
+  void joinGame(String characterId, String name, {String? spriteType}) {
+    socket?.emit('player:join', {
+      'characterId': characterId,
+      'name': name,
+      'spriteType': spriteType,
+    });
   }
 
   void movePlayer(double x, double y) {

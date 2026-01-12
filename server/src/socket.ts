@@ -4,6 +4,7 @@ interface Player {
   id: string;
   socketId: string;
   name: string;
+  spriteType?: string;
   x: number;
   y: number;
 }
@@ -15,11 +16,12 @@ export function setupSocketIO(io: Server) {
     console.log(`Client connected: ${socket.id}`);
 
     // Player joins game
-    socket.on('player:join', (data: { characterId: string; name: string }) => {
+    socket.on('player:join', (data: { characterId: string; name: string; spriteType?: string }) => {
       const player: Player = {
         id: data.characterId,
         socketId: socket.id,
         name: data.name,
+        spriteType: data.spriteType,
         x: 0,
         y: 0
       };
