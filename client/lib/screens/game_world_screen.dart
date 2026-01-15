@@ -1400,10 +1400,10 @@ class GameWorldPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     // Draw world background image
-    print('Painting: worldBackground is ${worldBackground != null ? "loaded" : "null"}');
     if (worldBackground != null) {
-      print('Drawing world background image');
       // Calculate the visible world area
+      // When player moves up (Y increases), we want to show lower parts of the image
+      // So we need to invert the Y calculation
       final worldStartX = playerX - size.width / 2;
       final worldStartY = playerY - size.height / 2;
       final worldEndX = playerX + size.width / 2;
@@ -1416,8 +1416,11 @@ class GameWorldPainter extends CustomPainter {
       const worldHeight = 10000.0;
       
       // Calculate which part of the background image to show
+      // X is straightforward: left to right
       final sourceX = (worldStartX / worldWidth) * bgWidth;
-      final sourceY = (worldStartY / worldHeight) * bgHeight;
+      // Y needs to be inverted: when player Y increases (moves up), show lower part of image
+      // So we calculate from the bottom: worldHeight - worldStartY
+      final sourceY = ((worldHeight - worldEndY) / worldHeight) * bgHeight;
       final sourceWidth = ((worldEndX - worldStartX) / worldWidth) * bgWidth;
       final sourceHeight = ((worldEndY - worldStartY) / worldHeight) * bgHeight;
       
