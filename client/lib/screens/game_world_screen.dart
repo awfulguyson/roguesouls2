@@ -268,29 +268,34 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       final newY = _screenToGameY(screenY);
       
       // Always update state to trigger repaint, even if player already exists
-      setState(() {
-        if (_players.containsKey(playerId)) {
-          final oldX = _players[playerId]!.x;
-          final oldY = _players[playerId]!.y;
-          
-          _players[playerId]!.x = newX;
-          _players[playerId]!.y = newY;
-          
-          // Infer direction from movement
-          final dx = newX - oldX;
-          final dy = newY - oldY;
-          if (dy != 0) {
-            // Vertical movement - update direction (in game coords, +y is up)
-            _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
-          }
-        } else {
-          // Player moved but not in our list - add them (might be a late join)
+      if (_players.containsKey(playerId)) {
+        final oldX = _players[playerId]!.x;
+        final oldY = _players[playerId]!.y;
+        
+        // Only update if position actually changed (avoid unnecessary repaints)
+        if ((oldX - newX).abs() > 0.1 || (oldY - newY).abs() > 0.1) {
+          setState(() {
+            _players[playerId]!.x = newX;
+            _players[playerId]!.y = newY;
+            
+            // Infer direction from movement
+            final dx = newX - oldX;
+            final dy = newY - oldY;
+            if (dy != 0) {
+              // Vertical movement - update direction (in game coords, +y is up)
+              _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
+            }
+          });
+        }
+      } else {
+        // Player moved but not in our list - add them (might be a late join)
+        setState(() {
           final player = Player.fromJson(data);
           player.x = newX;
           player.y = newY;
           _players[playerId] = player;
-        }
-      });
+        });
+      }
     };
     _gameService.addPlayerMovedListener(_playerMovedCallback);
 
@@ -410,23 +415,22 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             // Game world background
             Container(
               color: const Color(0xFF222222), // Dark grey background
-              child: RepaintBoundary(
-                child: CustomPaint(
-                  painter: GameWorldPainter(
-                    _players,
-                    _playerX,
-                    _playerY,
-                    widget.characterId ?? '',
-                    widget.characterName ?? '',
-                    _playerDirection,
-                    widget.spriteType ?? 'char-1',
-                    _char1Sprite,
-                    _char2Sprite,
-                    _gameToScreenX,
-                    _gameToScreenY,
-                  ),
-                  size: Size.infinite,
+              child: CustomPaint(
+                key: ValueKey('game_${_players.length}_${DateTime.now().millisecondsSinceEpoch ~/ 100}'), // Force repaint on player changes
+                painter: GameWorldPainter(
+                  _players,
+                  _playerX,
+                  _playerY,
+                  widget.characterId ?? '',
+                  widget.characterName ?? '',
+                  _playerDirection,
+                  widget.spriteType ?? 'char-1',
+                  _char1Sprite,
+                  _char2Sprite,
+                  _gameToScreenX,
+                  _gameToScreenY,
                 ),
+                size: Size.infinite,
               ),
             ),
             // Settings button (top left)
@@ -1195,27 +1199,33 @@ class GameWorldPainter extends CustomPainter {
   @override
   bool shouldRepaint(GameWorldPainter oldDelegate) {
     // Always repaint if player positions changed
-    bool playersChanged = false;
     if (oldDelegate.players.length != players.length) {
-      playersChanged = true;
-    } else {
-      for (var playerId in players.keys) {
-        final oldPlayer = oldDelegate.players[playerId];
-        final newPlayer = players[playerId];
-        if (oldPlayer == null || 
-            oldPlayer.x != newPlayer?.x || 
-            oldPlayer.y != newPlayer?.y ||
-            oldPlayer.direction != newPlayer?.direction) {
-          playersChanged = true;
-          break;
-        }
+      return true;
+    }
+    
+    // Check if any player position changed
+    for (var playerId in players.keys) {
+      final oldPlayer = oldDelegate.players[playerId];
+      final newPlayer = players[playerId];
+      if (oldPlayer == null || newPlayer == null) {
+        return true;
+      }
+      // Use a small threshold to account for floating point precision
+      if ((oldPlayer.x - newPlayer.x).abs() > 0.01 || 
+          (oldPlayer.y - newPlayer.y).abs() > 0.01 ||
+          oldPlayer.direction != newPlayer.direction) {
+        return true;
       }
     }
     
-    return oldDelegate.playerX != playerX ||
-        oldDelegate.playerY != playerY ||
-        playersChanged ||
-        oldDelegate.currentPlayerName != currentPlayerName ||
+    // Check current player position
+    if ((oldDelegate.playerX - playerX).abs() > 0.01 ||
+        (oldDelegate.playerY - playerY).abs() > 0.01) {
+      return true;
+    }
+    
+    // Check other properties
+    return oldDelegate.currentPlayerName != currentPlayerName ||
         oldDelegate.currentPlayerDirection != currentPlayerDirection ||
         oldDelegate.currentPlayerSpriteType != currentPlayerSpriteType ||
         oldDelegate.char1Sprite != char1Sprite ||
