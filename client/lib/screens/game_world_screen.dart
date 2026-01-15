@@ -77,13 +77,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     // Only join game if character is loaded
     if (widget.characterId != null) {
       Future.delayed(const Duration(milliseconds: 500), () {
+        // Send screen coordinates (convert game coordinates to screen for server)
+        final screenX = _gameToScreenX(_playerX);
+        final screenY = _gameToScreenY(_playerY);
         _gameService.joinGame(
           widget.characterId!,
           widget.characterName!,
           spriteType: widget.spriteType ?? 'char-1',
+          x: screenX,
+          y: screenY,
         );
-        // Send screen coordinates (convert game coordinates to screen for server)
-        _gameService.movePlayer(_gameToScreenX(_playerX), _gameToScreenY(_playerY));
         _lastSentX = _playerX;
         _lastSentY = _playerY;
       });
@@ -907,13 +910,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     });
 
     // Join game with new character
+    // Send screen coordinates (convert game coordinates to screen for server)
+    final screenX = _gameToScreenX(_playerX);
+    final screenY = _gameToScreenY(_playerY);
     _gameService.joinGame(
       character['id'] as String,
       character['name'] as String,
       spriteType: character['spriteType'] as String? ?? 'char-1',
+      x: screenX,
+      y: screenY,
     );
-    // Send screen coordinates (convert game coordinates to screen for server)
-    _gameService.movePlayer(_gameToScreenX(_playerX), _gameToScreenY(_playerY));
     _lastSentX = _playerX;
     _lastSentY = _playerY;
 

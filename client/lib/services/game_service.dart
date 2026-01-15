@@ -22,12 +22,14 @@ class GameService {
     });
 
     socket!.on('game:players', (data) {
+      print('Received game:players: ${data.length} players');
       if (onPlayersList != null) {
         onPlayersList!(data as List<dynamic>);
       }
     });
 
     socket!.on('player:joined', (data) {
+      print('Received player:joined: ${data['name']} (${data['id']})');
       if (onPlayerJoined != null) {
         onPlayerJoined!(data as Map<String, dynamic>);
       }
@@ -52,11 +54,13 @@ class GameService {
     });
   }
 
-  void joinGame(String characterId, String name, {String? spriteType}) {
+  void joinGame(String characterId, String name, {String? spriteType, double? x, double? y}) {
     socket?.emit('player:join', {
       'characterId': characterId,
       'name': name,
       'spriteType': spriteType,
+      if (x != null) 'x': x,
+      if (y != null) 'y': y,
     });
   }
 

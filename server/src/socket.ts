@@ -16,25 +16,27 @@ export function setupSocketIO(io: Server) {
     console.log(`Client connected: ${socket.id}`);
 
     // Player joins game
-    socket.on('player:join', (data: { characterId: string; name: string; spriteType?: string }) => {
+    socket.on('player:join', (data: { characterId: string; name: string; spriteType?: string; x?: number; y?: number }) => {
       const player: Player = {
         id: data.characterId,
         socketId: socket.id,
         name: data.name,
         spriteType: data.spriteType,
-        x: 0,
-        y: 0
+        x: data.x ?? 0,
+        y: data.y ?? 0
       };
       
       players.set(socket.id, player);
       
-      // Send current players to new player
-      socket.emit('game:players', Array.from(players.values()));
+      // Send current players to new player (excluding self)
+      const otherPlayers = Array.from(players.values()).filter(p => p.socketId !== socket.id);
+      socket.emit('game:players', otherPlayers);
       
       // Notify others about new player
       socket.broadcast.emit('player:joined', player);
       
-      console.log(`Player joined: ${data.name} (${socket.id})`);
+      console.log(`Player joined: ${data.name} (${socket.id}) at (${player.x}, ${player.y})`);
+      console.log(`Total players: ${players.size}`);
     });
 
     // Player movement
