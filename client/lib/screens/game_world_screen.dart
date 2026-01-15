@@ -1097,6 +1097,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: TextField(
+                    focusNode: focusNode,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.done,
+                    autofocus: false,
                     controller: nameController,
                     decoration: const InputDecoration(
                       labelText: 'Name',
@@ -1104,6 +1108,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                       contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     ),
                     style: const TextStyle(fontSize: 12),
+                    onTap: () {
+                      // Ensure focus on tap for mobile
+                      focusNode.requestFocus();
+                    },
                   ),
                 ),
                 Padding(
@@ -1235,6 +1243,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         },
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    // Clean up any focus nodes if needed
+    super.dispose();
   }
 
   Future<void> _loadCharacter(Map<String, dynamic> character) async {
