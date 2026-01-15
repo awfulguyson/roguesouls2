@@ -1197,9 +1197,27 @@ class GameWorldPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(GameWorldPainter oldDelegate) {
+    // Always repaint if player positions changed
+    bool playersChanged = false;
+    if (oldDelegate.players.length != players.length) {
+      playersChanged = true;
+    } else {
+      for (var playerId in players.keys) {
+        final oldPlayer = oldDelegate.players[playerId];
+        final newPlayer = players[playerId];
+        if (oldPlayer == null || 
+            oldPlayer.x != newPlayer?.x || 
+            oldPlayer.y != newPlayer?.y ||
+            oldPlayer.direction != newPlayer?.direction) {
+          playersChanged = true;
+          break;
+        }
+      }
+    }
+    
     return oldDelegate.playerX != playerX ||
         oldDelegate.playerY != playerY ||
-        oldDelegate.players.length != players.length ||
+        playersChanged ||
         oldDelegate.currentPlayerName != currentPlayerName ||
         oldDelegate.currentPlayerDirection != currentPlayerDirection ||
         oldDelegate.currentPlayerSpriteType != currentPlayerSpriteType ||
