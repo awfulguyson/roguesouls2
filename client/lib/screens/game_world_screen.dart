@@ -351,9 +351,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       // Mobile: use joystick input
       if (_joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1) {
         deltaX = _joystickDeltaX * _playerSpeed;
-        deltaY = -_joystickDeltaY * _playerSpeed; // Invert Y for joystick (up is negative in joystick, but +y in game)
+        deltaY = -_joystickDeltaY * _playerSpeed; // Joystick: negative Y is up, world: up decreases Y (so invert is correct)
         
         // Determine direction based on joystick input
+        // Joystick: negative Y is up (toward top of screen), positive Y is down
+        // World: up decreases Y, down increases Y
         if (_joystickDeltaY.abs() > _joystickDeltaX.abs()) {
           // Vertical movement dominates
           newVerticalDirection = _joystickDeltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
@@ -377,12 +379,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowUp) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyW)) {
-        deltaY += _playerSpeed; // Up is +y in game coordinates
+        deltaY -= _playerSpeed; // Up decreases Y (toward 0, top of world)
         newVerticalDirection = PlayerDirection.up;
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowDown) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyS)) {
-        deltaY -= _playerSpeed; // Down is -y in game coordinates
+        deltaY += _playerSpeed; // Down increases Y (toward 10000, bottom of world)
         newVerticalDirection = PlayerDirection.down;
       }
     }
@@ -1371,36 +1373,32 @@ class GameWorldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw playable area with different colors based on position
-    // Use actual canvas size for responsive rendering
-    final double playableWidth = size.width;
-    final double playableHeight = size.height;
-    final double halfWidth = playableWidth / 2;
-    final double halfHeight = playableHeight / 2;
+    // Draw world background - draw a tiled pattern based on world position
+    // Calculate which tiles are visible based on camera position (player position)
+    const tileSize = 500.0; // Size of each background tile
+    final startTileX = ((playerX - size.width / 2) / tileSize).floor();
+    final endTileX = ((playerX + size.width / 2) / tileSize).ceil();
+    final startTileY = ((playerY - size.height / 2) / tileSize).floor();
+    final endTileY = ((playerY + size.height / 2) / tileSize).ceil();
     
-    // Top left: #F1FADC
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, halfWidth, halfHeight),
-      Paint()..color = const Color(0xFFF1FADC),
-    );
-    
-    // Top right: #FAE9DC
-    canvas.drawRect(
-      Rect.fromLTWH(halfWidth, 0, halfWidth, halfHeight),
-      Paint()..color = const Color(0xFFFAE9DC),
-    );
-    
-    // Bottom left: #DCF6FA
-    canvas.drawRect(
-      Rect.fromLTWH(0, halfHeight, halfWidth, halfHeight),
-      Paint()..color = const Color(0xFFDCF6FA),
-    );
-    
-    // Bottom right: #F1FADC
-    canvas.drawRect(
-      Rect.fromLTWH(halfWidth, halfHeight, halfWidth, halfHeight),
-      Paint()..color = const Color(0xFFF1FADC),
-    );
+    // Draw visible tiles
+    for (var tileY = startTileY; tileY <= endTileY; tileY++) {
+      for (var tileX = startTileX; tileX <= endTileX; tileX++) {
+        final worldTileX = tileX * tileSize;
+        final worldTileY = tileY * tileSize;
+        final screenX = worldToScreenX(worldTileX);
+        final screenY = worldToScreenY(worldTileY);
+        
+        // Alternate colors for checkerboard pattern
+        final isEven = (tileX + tileY) % 2 == 0;
+        final color = isEven ? const Color(0xFFF1FADC) : const Color(0xFFFAE9DC);
+        
+        canvas.drawRect(
+          Rect.fromLTWH(screenX, screenY, tileSize, tileSize),
+          Paint()..color = color,
+        );
+      }
+    }
     
     // Draw other players (world coordinates)
     for (var player in players.values) {
