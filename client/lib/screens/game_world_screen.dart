@@ -52,10 +52,20 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   double _joystickDeltaX = 0.0;
   double _joystickDeltaY = 0.0;
   
-  // Check if mobile device
-  bool get _isMobile {
-    // Check screen size - if width is less than 600px OR height is less than 600px (landscape), treat as mobile
-    return _screenWidth < 600 || _screenHeight < 600;
+  // Check if mobile device (using touch capability and screen size)
+  bool _isMobileDevice(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    
+    // Check if device has touch capability (primary pointer is touch)
+    final hasTouch = mediaQuery.pointerDeviceKind == PointerDeviceKind.touch;
+    
+    // Also check screen size as secondary indicator
+    // Mobile devices typically have smaller screens even in landscape
+    final isSmallScreen = mediaQuery.size.width < 768 || mediaQuery.size.height < 768;
+    
+    // Consider it mobile if it has touch AND is a small screen
+    // This prevents desktop browsers with resized windows from showing joystick
+    return hasTouch && isSmallScreen;
   }
   
   // Convert game coordinates to screen coordinates
@@ -327,7 +337,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     double deltaY = 0;
     PlayerDirection? newVerticalDirection;
     
-    if (_isMobile) {
+    // Check if mobile (need to check in update method too)
+    final isMobile = _screenWidth < 768 || _screenHeight < 768;
+    
+    if (isMobile) {
       // Mobile: use joystick input
       if (_joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1) {
         deltaX = _joystickDeltaX * _playerSpeed;
@@ -410,6 +423,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     
     // Scale player size based on screen (maintain aspect ratio)
     _playerSize = min(_screenWidth, _screenHeight) * 0.16; // ~16% of smaller dimension
+    
+    final isMobile = _isMobileDevice(context);
     
     Widget gameContent = Scaffold(
         body: Stack(
@@ -508,7 +523,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
               ),
             ),
             // Movement instructions (desktop only)
-            if (!_isMobile)
+            if (!isMobile)
               Positioned(
                 bottom: 16,
                 left: 16,
@@ -525,7 +540,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
             // Virtual joystick (mobile only)
-            if (_isMobile && widget.characterId != null)
+            if (isMobile && widget.characterId != null)
               Positioned(
                 bottom: max(20.0, _screenHeight * 0.05), // At least 20px or 5% of screen height
                 left: max(20.0, _screenWidth * 0.05), // At least 20px or 5% of screen width
@@ -547,7 +562,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         );
     
     // Wrap with KeyboardListener only on desktop
-    if (_isMobile) {
+    if (isMobile) {
       return gameContent;
     } else {
       return KeyboardListener(
