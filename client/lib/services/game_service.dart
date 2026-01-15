@@ -130,6 +130,7 @@ class GameService {
     });
 
     socket!.on('player:moved', (data) {
+      print('Received player:moved event: ${data['id']} at (${data['x']}, ${data['y']}), listeners: ${_onPlayerMovedListeners.length}');
       for (var listener in _onPlayerMovedListeners) {
         listener(data as Map<String, dynamic>);
       }

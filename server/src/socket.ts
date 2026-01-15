@@ -87,12 +87,17 @@ export function setupSocketIO(io: Server) {
           player.y = data.y;
           
           // Broadcast movement to ALL players (including sender for consistency)
+          console.log(`Broadcasting movement: ${player.name} (${player.id}) to (${data.x}, ${data.y}), total clients: ${io.sockets.sockets.size}`);
           io.emit('player:moved', {
             id: player.id,
             x: data.x,
             y: data.y
           });
+        } else {
+          console.log(`Movement received but player not found: ${characterId}`);
         }
+      } else {
+        console.log(`Movement received but characterId not found for socket: ${socket.id}`);
       }
     });
 

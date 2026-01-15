@@ -253,12 +253,18 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.addPlayerJoinedListener(_playerJoinedCallback);
 
     _playerMovedCallback = (data) {
-      if (!mounted) return;
+      print('_playerMovedCallback called: playerId=${data['id']}, characterId=${widget.characterId}');
+      if (!mounted) {
+        print('Skipping: not mounted');
+        return;
+      }
       final playerId = data['id'] as String;
       // Skip our own movement updates (we handle our own position locally)
       if (widget.characterId != null && playerId == widget.characterId) {
+        print('Skipping own movement update');
         return;
       }
+      print('Processing movement for player: $playerId, in map: ${_players.containsKey(playerId)}');
       setState(() {
         if (_players.containsKey(playerId)) {
           final oldX = _players[playerId]!.x;
