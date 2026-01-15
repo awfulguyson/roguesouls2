@@ -988,13 +988,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
     // Clear callbacks but DON'T disconnect - keep connection alive for navigation
-    _gameService.onPlayersList = null;
-    _gameService.onPlayerJoined = null;
-    _gameService.onPlayerMoved = null;
-    _gameService.onPlayerLeft = null;
-    _gameService.onChatMessage = null;
-    // Only disconnect if we're actually leaving the game world completely
-    // _gameService.disconnect();
+    // GameService is now a singleton, so connection persists across screens
+    _gameService.clearCallbacks();
     super.dispose();
   }
 }
