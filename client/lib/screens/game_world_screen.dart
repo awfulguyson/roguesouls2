@@ -1435,29 +1435,11 @@ class GameWorldPainter extends CustomPainter {
       
       canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
     } else {
-      // Fallback: draw tiled pattern if background image not loaded
-      const tileSize = 500.0;
-      final startTileX = ((playerX - size.width / 2) / tileSize).floor();
-      final endTileX = ((playerX + size.width / 2) / tileSize).ceil();
-      final startTileY = ((playerY - size.height / 2) / tileSize).floor();
-      final endTileY = ((playerY + size.height / 2) / tileSize).ceil();
-      
-      for (var tileY = startTileY; tileY <= endTileY; tileY++) {
-        for (var tileX = startTileX; tileX <= endTileX; tileX++) {
-          final worldTileX = tileX * tileSize;
-          final worldTileY = tileY * tileSize;
-          final screenX = worldToScreenX(worldTileX);
-          final screenY = worldToScreenY(worldTileY);
-          
-          final isEven = (tileX + tileY) % 2 == 0;
-          final color = isEven ? const Color(0xFFF1FADC) : const Color(0xFFFAE9DC);
-          
-          canvas.drawRect(
-            Rect.fromLTWH(screenX, screenY, tileSize, tileSize),
-            Paint()..color = color,
-          );
-        }
-      }
+      // Fallback: draw black background if image not loaded
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        Paint()..color = Colors.black,
+      );
     }
     
     // Draw other players (world coordinates)
