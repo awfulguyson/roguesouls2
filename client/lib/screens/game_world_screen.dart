@@ -81,8 +81,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   
   // Convert world coordinates to screen coordinates (camera system - player always centered)
   // Camera follows player, so player position is the camera position
+  // When player moves up (Y increases), objects should appear to move down on screen
   double _worldToScreenX(double worldX) => worldX - _playerX + _screenWidth / 2;
-  double _worldToScreenY(double worldY) => worldY - _playerY + _screenHeight / 2;
+  double _worldToScreenY(double worldY) => _playerY - worldY + _screenHeight / 2;
   
   // Convert screen coordinates to world coordinates
   double _screenToWorldX(double screenX) => screenX - _screenWidth / 2 + _playerX;
@@ -351,11 +352,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       // Mobile: use joystick input
       if (_joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1) {
         deltaX = _joystickDeltaX * _playerSpeed;
-        deltaY = -_joystickDeltaY * _playerSpeed; // Joystick: negative Y is up, world: up decreases Y (so invert is correct)
+        deltaY = _joystickDeltaY * _playerSpeed; // Joystick: negative Y is up, world: up increases Y
         
         // Determine direction based on joystick input
         // Joystick: negative Y is up (toward top of screen), positive Y is down
-        // World: up decreases Y, down increases Y
+        // World: up increases Y, down decreases Y
         if (_joystickDeltaY.abs() > _joystickDeltaX.abs()) {
           // Vertical movement dominates
           newVerticalDirection = _joystickDeltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
@@ -379,12 +380,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowUp) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyW)) {
-        deltaY -= _playerSpeed; // Up decreases Y (toward 0, top of world)
+        deltaY += _playerSpeed; // Up increases Y (player moves up in world, Y increases)
         newVerticalDirection = PlayerDirection.up;
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowDown) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyS)) {
-        deltaY += _playerSpeed; // Down increases Y (toward 10000, bottom of world)
+        deltaY -= _playerSpeed; // Down decreases Y (player moves down in world, Y decreases)
         newVerticalDirection = PlayerDirection.down;
       }
     }
@@ -465,6 +466,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   widget.spriteType ?? 'char-1',
                   _char1Sprite,
                   _char2Sprite,
+                  _worldBackground,
                   _worldToScreenX,
                   _worldToScreenY,
                   _playerSize, // Pass player size to painter
@@ -1054,6 +1056,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     return Center(
       child: StatefulBuilder(
         builder: (context, setModalState) {
+          final focusNode = FocusNode();
           return Container(
             width: 200,
             height: 300,
@@ -1245,12 +1248,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    // Clean up any focus nodes if needed
-    super.dispose();
-  }
-
   Future<void> _loadCharacter(Map<String, dynamic> character) async {
     // Close modals when loading a character
     setState(() {
@@ -1335,6 +1332,7 @@ class GameWorldPainter extends CustomPainter {
     this.currentPlayerSpriteType,
     this.char1Sprite,
     this.char2Sprite,
+    this.worldBackground,
     this.worldToScreenX,
     this.worldToScreenY,
     this.playerSize,
@@ -1387,30 +1385,59 @@ class GameWorldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw world background - draw a tiled pattern based on world position
-    // Calculate which tiles are visible based on camera position (player position)
-    const tileSize = 500.0; // Size of each background tile
-    final startTileX = ((playerX - size.width / 2) / tileSize).floor();
-    final endTileX = ((playerX + size.width / 2) / tileSize).ceil();
-    final startTileY = ((playerY - size.height / 2) / tileSize).floor();
-    final endTileY = ((playerY + size.height / 2) / tileSize).ceil();
-    
-    // Draw visible tiles
-    for (var tileY = startTileY; tileY <= endTileY; tileY++) {
-      for (var tileX = startTileX; tileX <= endTileX; tileX++) {
-        final worldTileX = tileX * tileSize;
-        final worldTileY = tileY * tileSize;
-        final screenX = worldToScreenX(worldTileX);
-        final screenY = worldToScreenY(worldTileY);
-        
-        // Alternate colors for checkerboard pattern
-        final isEven = (tileX + tileY) % 2 == 0;
-        final color = isEven ? const Color(0xFFF1FADC) : const Color(0xFFFAE9DC);
-        
-        canvas.drawRect(
-          Rect.fromLTWH(screenX, screenY, tileSize, tileSize),
-          Paint()..color = color,
-        );
+    // Draw world background image
+    if (worldBackground != null) {
+      // Calculate the visible world area
+      final worldStartX = playerX - size.width / 2;
+      final worldStartY = playerY - size.height / 2;
+      final worldEndX = playerX + size.width / 2;
+      final worldEndY = playerY + size.height / 2;
+      
+      // Calculate source rect from background image (scale to world size)
+      final bgWidth = _worldBackground!.width.toDouble();
+      final bgHeight = _worldBackground!.height.toDouble();
+      const worldWidth = 10000.0;
+      const worldHeight = 10000.0;
+      
+      // Calculate which part of the background image to show
+      final sourceX = (worldStartX / worldWidth) * bgWidth;
+      final sourceY = (worldStartY / worldHeight) * bgHeight;
+      final sourceWidth = ((worldEndX - worldStartX) / worldWidth) * bgWidth;
+      final sourceHeight = ((worldEndY - worldStartY) / worldHeight) * bgHeight;
+      
+      final sourceRect = Rect.fromLTWH(
+        sourceX.clamp(0, bgWidth),
+        sourceY.clamp(0, bgHeight),
+        sourceWidth.clamp(0, bgWidth - sourceX),
+        sourceHeight.clamp(0, bgHeight - sourceY),
+      );
+      
+      final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
+      
+      canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
+    } else {
+      // Fallback: draw tiled pattern if background image not loaded
+      const tileSize = 500.0;
+      final startTileX = ((playerX - size.width / 2) / tileSize).floor();
+      final endTileX = ((playerX + size.width / 2) / tileSize).ceil();
+      final startTileY = ((playerY - size.height / 2) / tileSize).floor();
+      final endTileY = ((playerY + size.height / 2) / tileSize).ceil();
+      
+      for (var tileY = startTileY; tileY <= endTileY; tileY++) {
+        for (var tileX = startTileX; tileX <= endTileX; tileX++) {
+          final worldTileX = tileX * tileSize;
+          final worldTileY = tileY * tileSize;
+          final screenX = worldToScreenX(worldTileX);
+          final screenY = worldToScreenY(worldTileY);
+          
+          final isEven = (tileX + tileY) % 2 == 0;
+          final color = isEven ? const Color(0xFFF1FADC) : const Color(0xFFFAE9DC);
+          
+          canvas.drawRect(
+            Rect.fromLTWH(screenX, screenY, tileSize, tileSize),
+            Paint()..color = color,
+          );
+        }
       }
     }
     
