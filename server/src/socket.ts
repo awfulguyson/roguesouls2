@@ -17,6 +17,7 @@ const socketToCharacter: Map<string, string> = new Map();
 export function setupSocketIO(io: Server) {
   io.on('connection', (socket: Socket) => {
     console.log(`Client connected: ${socket.id}`);
+    console.log(`Current players in server: ${players.size}`, Array.from(players.values()).map(p => `${p.name} (${p.id})`));
     
     // Send current players list to newly connected client (for viewing before joining)
     socket.emit('game:players', Array.from(players.values()));
@@ -69,6 +70,8 @@ export function setupSocketIO(io: Server) {
       
       // Send current players to this player (excluding self)
       const otherPlayers = Array.from(players.values()).filter(p => p.id !== characterId);
+      console.log(`Sending ${otherPlayers.length} other players to ${data.name}. Total players in server: ${players.size}`);
+      console.log(`All players:`, Array.from(players.values()).map(p => `${p.name} (${p.id})`));
       socket.emit('game:players', otherPlayers);
       
       console.log(`Total players: ${players.size}`);
