@@ -8,11 +8,14 @@ import { setupSocketIO } from './socket';
 
 dotenv.config();
 
+// Normalize FRONTEND_URL (remove trailing slash if present)
+const frontendUrl = process.env.FRONTEND_URL?.replace(/\/$/, '') || '*';
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || '*', // Set FRONTEND_URL in production
+    origin: frontendUrl,
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -20,7 +23,7 @@ const io = new Server(httpServer, {
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: frontendUrl,
   credentials: true
 }));
 app.use(express.json());
