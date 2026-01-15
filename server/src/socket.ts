@@ -9,7 +9,10 @@ interface Player {
   y: number;
 }
 
+// Store players by characterId (not socketId) so reconnections work
 const players: Map<string, Player> = new Map();
+// Map socketId to characterId for cleanup on disconnect
+const socketToCharacter: Map<string, string> = new Map();
 
 export function setupSocketIO(io: Server) {
   io.on('connection', (socket: Socket) => {
@@ -25,64 +28,104 @@ export function setupSocketIO(io: Server) {
 
     // Player joins game
     socket.on('player:join', (data: { characterId: string; name: string; spriteType?: string; x?: number; y?: number }) => {
-      const player: Player = {
-        id: data.characterId,
-        socketId: socket.id,
-        name: data.name,
-        spriteType: data.spriteType,
-        x: data.x ?? 0,
-        y: data.y ?? 0
-      };
+      const characterId = data.characterId;
       
-      players.set(socket.id, player);
+      // Check if this character is already in the game (reconnection)
+      const existingPlayer = players.get(characterId);
       
-      // Send current players to new player (excluding self)
-      const otherPlayers = Array.from(players.values()).filter(p => p.socketId !== socket.id);
+      if (existingPlayer) {
+        // Reconnection: update socketId but keep player data
+        console.log(`Player reconnected: ${data.name} (${characterId}), old socket: ${existingPlayer.socketId}, new socket: ${socket.id}`);
+        
+        // Remove old socket mapping
+        socketToCharacter.delete(existingPlayer.socketId);
+        
+        // Update player with new socket
+        existingPlayer.socketId = socket.id;
+        if (data.x != null) existingPlayer.x = data.x;
+        if (data.y != null) existingPlayer.y = data.y;
+        
+        // Update socket mapping
+        socketToCharacter.set(socket.id, characterId);
+      } else {
+        // New player joining
+        const player: Player = {
+          id: characterId,
+          socketId: socket.id,
+          name: data.name,
+          spriteType: data.spriteType,
+          x: data.x ?? 0,
+          y: data.y ?? 0
+        };
+        
+        players.set(characterId, player);
+        socketToCharacter.set(socket.id, characterId);
+        
+        // Notify others about new player
+        socket.broadcast.emit('player:joined', player);
+        
+        console.log(`Player joined: ${data.name} (${characterId}) at (${player.x}, ${player.y})`);
+      }
+      
+      // Send current players to this player (excluding self)
+      const otherPlayers = Array.from(players.values()).filter(p => p.id !== characterId);
       socket.emit('game:players', otherPlayers);
       
-      // Notify others about new player
-      socket.broadcast.emit('player:joined', player);
-      
-      console.log(`Player joined: ${data.name} (${socket.id}) at (${player.x}, ${player.y})`);
       console.log(`Total players: ${players.size}`);
     });
 
     // Player movement
     socket.on('player:move', (data: { x: number; y: number }) => {
-      const player = players.get(socket.id);
-      if (player) {
-        player.x = data.x;
-        player.y = data.y;
-        
-        // Broadcast movement to all other players
-        socket.broadcast.emit('player:moved', {
-          id: player.id,
-          x: data.x,
-          y: data.y
-        });
+      const characterId = socketToCharacter.get(socket.id);
+      if (characterId) {
+        const player = players.get(characterId);
+        if (player) {
+          player.x = data.x;
+          player.y = data.y;
+          
+          // Broadcast movement to all other players
+          socket.broadcast.emit('player:moved', {
+            id: player.id,
+            x: data.x,
+            y: data.y
+          });
+        }
       }
     });
 
     // Chat message
     socket.on('chat:message', (data: { message: string }) => {
-      const player = players.get(socket.id);
-      if (player) {
-        io.emit('chat:broadcast', {
-          playerId: player.id,
-          playerName: player.name,
-          message: data.message,
-          timestamp: new Date().toISOString()
-        });
+      const characterId = socketToCharacter.get(socket.id);
+      if (characterId) {
+        const player = players.get(characterId);
+        if (player) {
+          io.emit('chat:broadcast', {
+            playerId: player.id,
+            playerName: player.name,
+            message: data.message,
+            timestamp: new Date().toISOString()
+          });
+        }
       }
     });
 
     // Player disconnects
     socket.on('disconnect', () => {
-      const player = players.get(socket.id);
-      if (player) {
-        players.delete(socket.id);
-        socket.broadcast.emit('player:left', { id: player.id });
-        console.log(`Player left: ${player.name} (${socket.id})`);
+      const characterId = socketToCharacter.get(socket.id);
+      if (characterId) {
+        const player = players.get(characterId);
+        if (player) {
+          // Only remove player if this is their current socket (not a stale connection)
+          if (player.socketId === socket.id) {
+            players.delete(characterId);
+            socket.broadcast.emit('player:left', { id: player.id });
+            console.log(`Player left: ${player.name} (${characterId})`);
+          } else {
+            // Stale connection, just remove the mapping
+            console.log(`Stale connection removed: ${socket.id} for ${characterId}`);
+          }
+        }
+        socketToCharacter.delete(socket.id);
       }
     });
   });

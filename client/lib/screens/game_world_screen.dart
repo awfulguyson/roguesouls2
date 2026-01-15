@@ -953,41 +953,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _selectedCharacter = null;
     });
 
-    // Join game with new character
-    // Send screen coordinates (convert game coordinates to screen for server)
-    final screenX = _gameToScreenX(_playerX);
-    final screenY = _gameToScreenY(_playerY);
-    _gameService.joinGame(
-      character['id'] as String,
-      character['name'] as String,
-      spriteType: character['spriteType'] as String? ?? 'char-1',
-      x: screenX,
-      y: screenY,
-    );
-    _lastSentX = _playerX;
-    _lastSentY = _playerY;
-
-    // Start movement timers if not already started
-    if (_movementTimer == null) {
-      _movementTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        _updateMovement();
-      });
-    }
-    if (_positionUpdateTimer == null) {
-      _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-        final dx = (_playerX - _lastSentX).abs();
-        final dy = (_playerY - _lastSentY).abs();
-        
-        if (dx > 1 || dy > 1) {
-          // Send screen coordinates (convert game coordinates to screen for server)
-          _gameService.movePlayer(_gameToScreenX(_playerX), _gameToScreenY(_playerY));
-          _lastSentX = _playerX;
-          _lastSentY = _playerY;
-        }
-      });
-    }
-
-    // Update widget state by replacing the screen, preserving accountId
+    // Update widget state by replacing the screen, preserving accountId and WebSocket connection
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -1021,13 +987,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   void dispose() {
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
-    // Clear callbacks before disconnecting to prevent setState after dispose
+    // Clear callbacks but DON'T disconnect - keep connection alive for navigation
     _gameService.onPlayersList = null;
     _gameService.onPlayerJoined = null;
     _gameService.onPlayerMoved = null;
     _gameService.onPlayerLeft = null;
     _gameService.onChatMessage = null;
-    _gameService.disconnect();
+    // Only disconnect if we're actually leaving the game world completely
+    // _gameService.disconnect();
     super.dispose();
   }
 }
