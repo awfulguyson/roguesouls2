@@ -52,20 +52,24 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   double _joystickDeltaX = 0.0;
   double _joystickDeltaY = 0.0;
   
-  // Check if mobile device (using touch capability and screen size)
+  // Check if mobile device (using screen size and aspect ratio)
   bool _isMobileDevice(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
+    final size = mediaQuery.size;
     
-    // Check if device has touch capability (primary pointer is touch)
-    final hasTouch = mediaQuery.pointerDeviceKind == PointerDeviceKind.touch;
+    // Mobile devices typically have:
+    // 1. Smaller screens (width or height < 768px)
+    // 2. Higher pixel density (devicePixelRatio > 1.5 for most mobile)
+    // 3. Aspect ratio closer to phone/tablet (not ultra-wide desktop)
     
-    // Also check screen size as secondary indicator
-    // Mobile devices typically have smaller screens even in landscape
-    final isSmallScreen = mediaQuery.size.width < 768 || mediaQuery.size.height < 768;
+    final isSmallScreen = size.width < 768 || size.height < 768;
+    final hasHighDensity = mediaQuery.devicePixelRatio > 1.5;
+    final aspectRatio = size.width / size.height;
+    final isPhoneAspectRatio = aspectRatio > 0.5 && aspectRatio < 2.5; // Typical phone/tablet range
     
-    // Consider it mobile if it has touch AND is a small screen
+    // Consider it mobile if it's a small screen with high pixel density and phone-like aspect ratio
     // This prevents desktop browsers with resized windows from showing joystick
-    return hasTouch && isSmallScreen;
+    return isSmallScreen && hasHighDensity && isPhoneAspectRatio;
   }
   
   // Convert game coordinates to screen coordinates
@@ -337,10 +341,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     double deltaY = 0;
     PlayerDirection? newVerticalDirection;
     
-    // Check if mobile (need to check in update method too)
-    final isMobile = _screenWidth < 768 || _screenHeight < 768;
+    // Check if mobile - use joystick if joystick has input, otherwise check screen size
+    // If joystick is being used (has input), it's mobile
+    final isUsingJoystick = _joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1;
+    final isSmallScreen = _screenWidth < 768 || _screenHeight < 768;
     
-    if (isMobile) {
+    if (isUsingJoystick || isSmallScreen) {
       // Mobile: use joystick input
       if (_joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1) {
         deltaX = _joystickDeltaX * _playerSpeed;
