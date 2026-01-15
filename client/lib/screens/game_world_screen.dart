@@ -196,7 +196,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   void _setupGameService() {
-    _gameService.onPlayersList = (players) {
+    _playersListCallback = (players) {
       print('onPlayersList called with ${players.length} players, characterId: ${widget.characterId}');
       if (!mounted) {
         print('Skipping: not mounted');
@@ -222,8 +222,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         print('Total players in map: ${_players.length}');
       });
     };
+    _gameService.addPlayersListListener(_playersListCallback);
 
-    _gameService.onPlayerJoined = (data) {
+    _playerJoinedCallback = (data) {
       print('onPlayerJoined called: $data, characterId: ${widget.characterId}');
       if (!mounted) {
         print('Skipping: not mounted');
@@ -245,8 +246,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         print('Total players in map after join: ${_players.length}');
       });
     };
+    _gameService.addPlayerJoinedListener(_playerJoinedCallback);
 
-    _gameService.onPlayerMoved = (data) {
+    _playerMovedCallback = (data) {
       if (!mounted) return;
       setState(() {
         final playerId = data['id'] as String;
@@ -274,13 +276,15 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         }
       });
     };
+    _gameService.addPlayerMovedListener(_playerMovedCallback);
 
-    _gameService.onPlayerLeft = (data) {
+    _playerLeftCallback = (data) {
       if (!mounted) return;
       setState(() {
         _players.remove(data['id'] as String);
       });
     };
+    _gameService.addPlayerLeftListener(_playerLeftCallback);
   }
 
   void _updateMovement() {
@@ -983,13 +987,23 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     }
   }
 
+  // Store callback references so we can remove them on dispose
+  Function(Map<String, dynamic>)? _playerJoinedCallback;
+  Function(Map<String, dynamic>)? _playerMovedCallback;
+  Function(Map<String, dynamic>)? _playerLeftCallback;
+  Function(List<dynamic>)? _playersListCallback;
+
   @override
   void dispose() {
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
-    // Clear callbacks but DON'T disconnect - keep connection alive for navigation
-    // GameService is now a singleton, so connection persists across screens
-    _gameService.clearCallbacks();
+    // Remove only this screen's callbacks, don't clear all
+    _gameService.removeCallback(
+      onPlayerJoined: _playerJoinedCallback,
+      onPlayerMoved: _playerMovedCallback,
+      onPlayerLeft: _playerLeftCallback,
+      onPlayersList: _playersListCallback,
+    );
     super.dispose();
   }
 }
