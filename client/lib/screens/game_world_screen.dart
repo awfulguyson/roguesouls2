@@ -1104,6 +1104,7 @@ class GameWorldPainter extends CustomPainter {
   final ui.Image? char2Sprite;
   final double Function(double) gameToScreenX;
   final double Function(double) gameToScreenY;
+  final double playerSize;
 
   GameWorldPainter(
     this.players,
@@ -1117,6 +1118,7 @@ class GameWorldPainter extends CustomPainter {
     this.char2Sprite,
     this.gameToScreenX,
     this.gameToScreenY,
+    this.playerSize,
   );
 
   void _drawSprite(
@@ -1166,7 +1168,7 @@ class GameWorldPainter extends CustomPainter {
     
     // Top left: #F1FADC
     canvas.drawRect(
-      const Rect.fromLTWH(0, 0, halfWidth, halfHeight),
+      Rect.fromLTWH(0, 0, halfWidth, halfHeight),
       Paint()..color = const Color(0xFFF1FADC),
     );
     
