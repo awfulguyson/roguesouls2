@@ -140,8 +140,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         
         // Send if moved more than 0.5 pixels (more frequent updates)
         if (dx > 0.5 || dy > 0.5) {
-          // Send screen coordinates (convert game coordinates to screen for server)
-          _gameService.movePlayer(_gameToScreenX(_playerX), _gameToScreenY(_playerY));
+          // Send game world coordinates directly (not screen coordinates)
+          _gameService.movePlayer(_playerX, _playerY);
           _lastSentX = _playerX;
           _lastSentY = _playerY;
         }
@@ -161,9 +161,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   void _joinGameWithCharacter() {
     if (widget.characterId == null) return;
     print('Joining game with character: ${widget.characterId}');
-    // Send screen coordinates (convert game coordinates to screen for server)
-    final screenX = _gameToScreenX(_playerX);
-    final screenY = _gameToScreenY(_playerY);
+    // Send game world coordinates directly (not screen coordinates)
     _gameService.joinGame(
       widget.characterId!,
       widget.characterName!,
@@ -240,9 +238,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           print('Processing player: $playerData');
           final player = Player.fromJson(playerData as Map<String, dynamic>);
           print('Parsed player: id=${player.id}, name=${player.name}, x=${player.x}, y=${player.y}');
-          // Convert from screen coordinates (from server) to game coordinates
-          player.x = _screenToGameX(player.x);
-          player.y = _screenToGameY(player.y);
+          // Positions from server are already in game world coordinates
           // Only skip if this is our own character (when we have one)
           if (widget.characterId == null || player.id != widget.characterId) {
             print('Adding player to map: ${player.id}');
@@ -265,9 +261,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       setState(() {
         final player = Player.fromJson(data);
         print('Parsed joined player: id=${player.id}, name=${player.name}');
-        // Convert from screen coordinates (from server) to game coordinates
-        player.x = _screenToGameX(player.x);
-        player.y = _screenToGameY(player.y);
+        // Positions from server are already in game world coordinates
         // Only skip if this is our own character (when we have one)
         if (widget.characterId == null || player.id != widget.characterId) {
           print('Adding joined player to map: ${player.id}');
@@ -288,11 +282,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         return;
       }
       
-      // Convert from screen coordinates (from server) to game coordinates
-      final screenX = (data['x'] as num).toDouble();
-      final screenY = (data['y'] as num).toDouble();
-      final newX = _screenToGameX(screenX);
-      final newY = _screenToGameY(screenY);
+      // Positions from server are already in game world coordinates
+      final newX = (data['x'] as num).toDouble();
+      final newY = (data['y'] as num).toDouble();
       
       // Always update state to trigger repaint, even if player already exists
       if (_players.containsKey(playerId)) {
