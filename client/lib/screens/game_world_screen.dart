@@ -86,7 +86,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   ui.Image? _char2Sprite;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
-  String? _settingsView; // null = main menu, 'characterSelect' = character select inside settings
+  String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view
+  bool _joystickOnRight = true; // Default: joystick on right side
   Map<String, dynamic>? _selectedCharacter; // Selected character in character select screen
   String? _accountId;
   List<dynamic> _characters = [];
@@ -471,7 +472,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 size: Size.infinite,
               ),
             ),
-            // Settings button (top left)
+            // Menu button (top left)
             Positioned(
               top: 16,
               left: 16,
@@ -485,12 +486,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     _refreshCharacters();
                   }
                 },
-                icon: const Icon(Icons.settings, color: Colors.white),
+                icon: const Icon(Icons.menu, color: Colors.white),
                 style: IconButton.styleFrom(
                   backgroundColor: Colors.black54,
                   padding: const EdgeInsets.all(8),
                 ),
-                tooltip: 'Settings',
+                tooltip: 'Menu',
               ),
             ),
             // Settings modal (centered)
@@ -549,7 +550,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             if (isMobile && widget.characterId != null)
               Positioned(
                 bottom: max(20.0, _screenHeight * 0.05), // At least 20px or 5% of screen height
-                left: max(20.0, _screenWidth * 0.05), // At least 20px or 5% of screen width
+                left: _joystickOnRight ? null : max(20.0, _screenWidth * 0.05), // Left side
+                right: _joystickOnRight ? max(20.0, _screenWidth * 0.05) : null, // Right side (default)
                 child: VirtualJoystick(
                   size: min(min(_screenWidth, _screenHeight) * 0.2, 150), // 20% of smaller dimension, max 150px
                   onMove: (deltaX, deltaY) {
@@ -649,9 +651,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         children: [
                           ListTile(
                             dense: true,
-                            leading: const Icon(Icons.person, size: 20),
-                            title: Text(
-                              'Select Character',
+                            leading: const Icon(Icons.settings, size: 20),
+                            title: const Text(
+                              'Settings',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: _characters.isEmpty ? Colors.grey : null,
