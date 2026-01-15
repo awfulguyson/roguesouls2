@@ -74,21 +74,27 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.connect();
     _initializeAccount();
     
+    // Connect to server to see other players (even without character)
+    // Wait for socket to connect
+    _gameService.socket?.on('connect', (_) {
+      print('Socket connected, requesting player list...');
+      // Request current players list (server should send it on connection)
+    });
+    
     // Only join game if character is loaded
     if (widget.characterId != null) {
-      Future.delayed(const Duration(milliseconds: 500), () {
-        // Send screen coordinates (convert game coordinates to screen for server)
-        final screenX = _gameToScreenX(_playerX);
-        final screenY = _gameToScreenY(_playerY);
-        _gameService.joinGame(
-          widget.characterId!,
-          widget.characterName!,
-          spriteType: widget.spriteType ?? 'char-1',
-          x: screenX,
-          y: screenY,
-        );
-        _lastSentX = _playerX;
-        _lastSentY = _playerY;
+      // Wait for socket to connect before joining
+      _gameService.socket?.on('connect', (_) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _joinGameWithCharacter();
+        });
+      });
+      
+      // Also try after a delay in case already connected
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (widget.characterId != null && _gameService.socket?.connected == true) {
+          _joinGameWithCharacter();
+        }
       });
       
       // Game loop: check pressed keys and move player continuously (60 FPS)
@@ -118,6 +124,23 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         _refreshCharacters();
       });
     }
+  }
+
+  void _joinGameWithCharacter() {
+    if (widget.characterId == null) return;
+    print('Joining game with character: ${widget.characterId}');
+    // Send screen coordinates (convert game coordinates to screen for server)
+    final screenX = _gameToScreenX(_playerX);
+    final screenY = _gameToScreenY(_playerY);
+    _gameService.joinGame(
+      widget.characterId!,
+      widget.characterName!,
+      spriteType: widget.spriteType ?? 'char-1',
+      x: screenX,
+      y: screenY,
+    );
+    _lastSentX = _playerX;
+    _lastSentY = _playerY;
   }
 
   Future<void> _initializeAccount() async {
@@ -174,31 +197,52 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   void _setupGameService() {
     _gameService.onPlayersList = (players) {
-      if (widget.characterId == null || !mounted) return;
+      print('onPlayersList called with ${players.length} players, characterId: ${widget.characterId}');
+      if (!mounted) {
+        print('Skipping: not mounted');
+        return;
+      }
       setState(() {
         _players.clear();
         for (var playerData in players) {
+          print('Processing player: $playerData');
           final player = Player.fromJson(playerData as Map<String, dynamic>);
+          print('Parsed player: id=${player.id}, name=${player.name}, x=${player.x}, y=${player.y}');
           // Convert from screen coordinates (from server) to game coordinates
           player.x = _screenToGameX(player.x);
           player.y = _screenToGameY(player.y);
-          if (player.id != widget.characterId) {
+          // Only skip if this is our own character (when we have one)
+          if (widget.characterId == null || player.id != widget.characterId) {
+            print('Adding player to map: ${player.id}');
             _players[player.id] = player;
+          } else {
+            print('Skipping self: ${player.id}');
           }
         }
+        print('Total players in map: ${_players.length}');
       });
     };
 
     _gameService.onPlayerJoined = (data) {
-      if (widget.characterId == null || !mounted) return;
+      print('onPlayerJoined called: $data, characterId: ${widget.characterId}');
+      if (!mounted) {
+        print('Skipping: not mounted');
+        return;
+      }
       setState(() {
         final player = Player.fromJson(data);
+        print('Parsed joined player: id=${player.id}, name=${player.name}');
         // Convert from screen coordinates (from server) to game coordinates
         player.x = _screenToGameX(player.x);
         player.y = _screenToGameY(player.y);
-        if (player.id != widget.characterId) {
+        // Only skip if this is our own character (when we have one)
+        if (widget.characterId == null || player.id != widget.characterId) {
+          print('Adding joined player to map: ${player.id}');
           _players[player.id] = player;
+        } else {
+          print('Skipping self (joined): ${player.id}');
         }
+        print('Total players in map after join: ${_players.length}');
       });
     };
 

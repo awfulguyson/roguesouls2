@@ -14,6 +14,14 @@ const players: Map<string, Player> = new Map();
 export function setupSocketIO(io: Server) {
   io.on('connection', (socket: Socket) => {
     console.log(`Client connected: ${socket.id}`);
+    
+    // Send current players list to newly connected client (for viewing before joining)
+    socket.emit('game:players', Array.from(players.values()));
+
+    // Request current players list
+    socket.on('game:requestPlayers', () => {
+      socket.emit('game:players', Array.from(players.values()));
+    });
 
     // Player joins game
     socket.on('player:join', (data: { characterId: string; name: string; spriteType?: string; x?: number; y?: number }) => {

@@ -8,17 +8,32 @@ class GameService {
   Function(Map<String, dynamic>)? onPlayerLeft;
   Function(Map<String, dynamic>)? onChatMessage;
   Function(List<dynamic>)? onPlayersList;
+  bool _isConnected = false;
 
   void connect() {
+    print('Connecting to WebSocket: ${AppConfig.websocketUrl}');
     socket = IO.io(AppConfig.websocketUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
     });
 
     socket!.connect();
+    print('Socket connect() called, waiting for connection...');
 
     socket!.on('connect', (_) {
-      print('Connected to game server');
+      _isConnected = true;
+      print('✅ Connected to game server: ${socket!.id}');
+      // Request current players list
+      socket!.emit('game:requestPlayers');
+    });
+
+    socket!.on('disconnect', (_) {
+      _isConnected = false;
+      print('❌ Disconnected from game server');
+    });
+
+    socket!.on('error', (error) {
+      print('❌ Socket error: $error');
     });
 
     socket!.on('game:players', (data) {
@@ -55,6 +70,7 @@ class GameService {
   }
 
   void joinGame(String characterId, String name, {String? spriteType, double? x, double? y}) {
+    print('Joining game: characterId=$characterId, name=$name, x=$x, y=$y');
     socket?.emit('player:join', {
       'characterId': characterId,
       'name': name,
@@ -62,6 +78,7 @@ class GameService {
       if (x != null) 'x': x,
       if (y != null) 'y': y,
     });
+    print('player:join event emitted');
   }
 
   void movePlayer(double x, double y) {
