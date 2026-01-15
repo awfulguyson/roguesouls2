@@ -68,7 +68,129 @@ Add this variable:
 
 ---
 
-## Part 2: Deploy Frontend to Cloudflare Pages (10 minutes)
+## Part 2: Deploy Frontend (Choose one option)
+
+### Option A: Firebase Hosting (Recommended - Best for Flutter) ⭐
+
+Firebase Hosting is the best free option for Flutter web apps. It's specifically designed for this use case.
+
+#### Step 1: Sign Up for Firebase and Create Project
+
+⚠️ **Important**: You must create the project via the web console first to accept Terms of Service.
+
+1. Go to https://console.firebase.google.com
+2. Click "Get Started" (free account)
+3. Sign in with Google
+4. Click "Create a project" (or "Add project")
+5. **Accept the Terms of Service** when prompted (this is required!)
+6. Enter project name: `roguesouls` (or any name)
+7. Accept/disable Google Analytics as you prefer
+8. Click "Create project"
+9. Wait for project creation to complete
+10. Click "Continue" to go to the project dashboard
+
+#### Step 2: Install Firebase CLI
+
+**Windows (PowerShell as Admin):**
+```powershell
+npm install -g firebase-tools
+```
+
+**Mac/Linux:**
+```bash
+npm install -g firebase-tools
+```
+
+#### Step 3: Login to Firebase
+
+```bash
+firebase login
+```
+
+#### Step 4: Initialize Firebase Hosting
+
+1. In your project root directory, run:
+   ```bash
+   firebase init hosting
+   ```
+
+2. When prompted:
+   - **Select an option**: Choose **"Use an existing project"** (the one you just created in Step 1)
+   - Select your project from the list
+   - **What do you want to use as your public directory?** → `client/build/web`
+   - **Configure as a single-page app?** → `Yes`
+   - **Set up automatic builds and deploys with GitHub?** → `No` (or Yes if you want auto-deploy)
+   - **File client/build/web/index.html already exists. Overwrite?** → `No` (keep existing)
+
+#### Step 5: Build Flutter App
+
+**Windows:**
+```powershell
+$env:API_BASE_URL="https://roguesouls.onrender.com"
+$env:WEBSOCKET_URL="https://roguesouls.onrender.com"
+cd client
+flutter pub get
+flutter build web --release --dart-define=API_BASE_URL=$env:API_BASE_URL --dart-define=WEBSOCKET_URL=$env:WEBSOCKET_URL
+cd ..
+```
+
+**Mac/Linux:**
+```bash
+export API_BASE_URL=https://roguesouls.onrender.com
+export WEBSOCKET_URL=https://roguesouls.onrender.com
+cd client
+flutter pub get
+flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=WEBSOCKET_URL=$WEBSOCKET_URL
+cd ..
+```
+
+#### Step 6: Deploy to Firebase
+
+```bash
+firebase deploy --only hosting
+```
+
+You'll get a URL like: `https://roguesouls.web.app` or `https://roguesouls.firebaseapp.com`
+
+✅ **Done!** Your app is live and will auto-deploy when you run `firebase deploy` after building.
+
+---
+
+### Option B: Netlify (Easy Drag-and-Drop) 
+
+#### Step 1: Sign Up for Netlify
+
+1. Go to https://app.netlify.com/signup
+2. Sign up with GitHub (free account)
+
+#### Step 2: Build Flutter App
+
+Build your app locally (same as Firebase Step 5 above)
+
+#### Step 3: Deploy to Netlify
+
+**Drag and Drop Method:**
+1. Go to https://app.netlify.com/drop
+2. Drag the `client/build/web` folder onto the page
+3. Your site is live instantly!
+
+**Git Integration (for auto-deploy):**
+1. In Netlify dashboard, click "Add new site" → "Import an existing project"
+2. Connect your GitHub repo
+3. Build settings:
+   - **Base directory**: `client`
+   - **Build command**: `flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=WEBSOCKET_URL=$WEBSOCKET_URL`
+   - **Publish directory**: `client/build/web`
+4. Add environment variables:
+   - `API_BASE_URL` = `https://roguesouls.onrender.com`
+   - `WEBSOCKET_URL` = `https://roguesouls.onrender.com`
+5. Deploy!
+
+⚠️ **Note**: Netlify doesn't have Flutter in their build environment, so you'll need to build locally first OR use GitHub Actions to build automatically.
+
+---
+
+### Option C: Cloudflare Pages (Manual Upload Required)
 
 ### Step 1: Sign Up for Cloudflare
 
@@ -85,38 +207,60 @@ Add this variable:
 5. Authorize Cloudflare to access GitHub
 6. Select your `roguesouls` repository
 
-### Step 3: Configure Build Settings
+### Step 3: Build Flutter App Locally
 
-Fill in:
+⚠️ **Important**: Cloudflare Pages doesn't support Flutter builds directly. You need to build locally first.
 
-- **Project name**: `roguesouls` (or any name)
-- **Production branch**: `main` (or `master`)
-- **Framework preset**: `None` (or leave default)
-- **Build command**: 
-  ```
-  cd client && flutter pub get && flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=WEBSOCKET_URL=$WEBSOCKET_URL
-  ```
-- **Build output directory**: `client/build/web`
-- **Root directory**: Leave empty (or `/`)
+1. **Install Flutter** (if not already installed):
+   - Download from: https://docs.flutter.dev/get-started/install
+   - Make sure `flutter` command works in your terminal
 
-### Step 4: Add Environment Variables
+2. **Build the app** (run from project root):
+   ```bash
+   export API_BASE_URL=https://roguesouls.onrender.com
+   export WEBSOCKET_URL=https://roguesouls.onrender.com
+   cd client
+   flutter pub get
+   flutter build web --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=WEBSOCKET_URL=$WEBSOCKET_URL
+   ```
+   
+   Or use the build script:
+   ```bash
+   export API_BASE_URL=https://roguesouls.onrender.com
+   export WEBSOCKET_URL=https://roguesouls.onrender.com
+   chmod +x build-for-cloudflare.sh
+   ./build-for-cloudflare.sh
+   ```
 
-Click "Add variable" and add:
+3. **Verify build output**: Check that `client/build/web` directory exists with your built files
 
-1. **Variable name**: `API_BASE_URL`
-   - **Value**: `https://your-backend.onrender.com` (use the URL from Part 1, Step 5)
+### Step 4: Deploy to Cloudflare Pages (Direct Upload)
 
-2. **Variable name**: `WEBSOCKET_URL`
-   - **Value**: `https://your-backend.onrender.com` (same URL)
+1. **Create a zip file** of the `client/build/web` folder:
+   - On Windows: Right-click `client/build/web` → Send to → Compressed (zipped) folder
+   - On Mac/Linux: `cd client/build && zip -r roguesouls-web.zip web/`
 
-⚠️ **Important**: Replace `your-backend.onrender.com` with your actual Render backend URL!
+2. **Upload to Cloudflare Pages**:
+   - In Cloudflare dashboard, go to "Workers & Pages"
+   - Click "Create application" → "Pages" → "Upload assets"
+   - Upload your zip file
+   - Click "Deploy site"
 
-### Step 5: Deploy
-
-1. Click "Save and Deploy"
-2. Cloudflare will build and deploy (takes 5-10 minutes first time)
-3. You'll get a URL like: `https://roguesouls.pages.dev`
+3. **Get your URL**: You'll get a URL like `https://roguesouls.pages.dev`
 4. **Copy this URL** - you'll need it for the next step!
+
+### Alternative: Connect to Git (for automatic deployments)
+
+If you want automatic deployments, you can connect to Git but need to build locally and commit the built files:
+
+1. Build locally (as in Step 3)
+2. Commit the `client/build/web` folder to git
+3. In Cloudflare Pages, connect to your GitHub repo
+4. Set **Build output directory**: `client/build/web`
+5. Set **Build command**: `echo "Using pre-built files"` (or leave empty)
+6. Deploy
+
+⚠️ **Note**: You'll need to rebuild and commit the `client/build/web` folder every time you make changes.
 
 ### Step 6: Test Frontend
 
