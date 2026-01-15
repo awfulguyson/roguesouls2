@@ -54,8 +54,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   
   // Check if mobile device
   bool get _isMobile {
-    // Check screen size - if width is less than 600px, treat as mobile
-    return _screenWidth < 600;
+    // Check screen size - if width is less than 600px OR height is less than 600px (landscape), treat as mobile
+    return _screenWidth < 600 || _screenHeight < 600;
   }
   
   // Convert game coordinates to screen coordinates
@@ -527,10 +527,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             // Virtual joystick (mobile only)
             if (_isMobile && widget.characterId != null)
               Positioned(
-                bottom: 20,
-                left: 20,
+                bottom: max(20.0, _screenHeight * 0.05), // At least 20px or 5% of screen height
+                left: max(20.0, _screenWidth * 0.05), // At least 20px or 5% of screen width
                 child: VirtualJoystick(
-                  size: min(_screenWidth * 0.25, 150),
+                  size: min(min(_screenWidth, _screenHeight) * 0.2, 150), // 20% of smaller dimension, max 150px
                   onMove: (deltaX, deltaY) {
                     setState(() {
                       _joystickDeltaX = deltaX;
