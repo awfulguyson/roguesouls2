@@ -3,9 +3,11 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/game_service.dart';
 import '../services/api_service.dart';
 import '../models/player.dart';
+import '../widgets/virtual_joystick.dart';
 import 'initial_screen.dart';
 
 class GameWorldScreen extends StatefulWidget {
@@ -36,15 +38,25 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   double _playerX = 0.0; // Game X coordinate (center = 0)
   double _playerY = 0.0; // Game Y coordinate (center = 0, up is +y, down is -y)
   final double _playerSpeed = 5.0;
-  final double _playerSize = 128.0; // Player sprite size
+  double _playerSize = 128.0; // Player sprite size (will scale with screen)
   Timer? _positionUpdateTimer;
   Timer? _movementTimer;
   double _lastSentX = 0.0;
   double _lastSentY = 0.0;
   
-  // Screen dimensions (playable area)
-  static const double _screenWidth = 800.0;
-  static const double _screenHeight = 600.0;
+  // Screen dimensions (playable area) - will be set from MediaQuery
+  double _screenWidth = 800.0;
+  double _screenHeight = 600.0;
+  
+  // Joystick state for mobile
+  double _joystickDeltaX = 0.0;
+  double _joystickDeltaY = 0.0;
+  
+  // Check if mobile device
+  bool get _isMobile {
+    // Check screen size - if width is less than 600px, treat as mobile
+    return _screenWidth < 600;
+  }
   
   // Convert game coordinates to screen coordinates
   double _gameToScreenX(double gameX) => gameX + _screenWidth / 2;
@@ -309,33 +321,50 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   void _updateMovement() {
-    if (_pressedKeys.isEmpty) return;
     if (widget.characterId == null) return; // Don't allow movement without character
     
     double deltaX = 0;
     double deltaY = 0;
     PlayerDirection? newVerticalDirection;
     
-    // Check which keys are pressed and calculate movement
-    if (_pressedKeys.contains(LogicalKeyboardKey.arrowLeft) ||
-        _pressedKeys.contains(LogicalKeyboardKey.keyA)) {
-      deltaX -= _playerSpeed;
-      // Left/right don't change sprite, use last vertical direction
-    }
-    if (_pressedKeys.contains(LogicalKeyboardKey.arrowRight) ||
-        _pressedKeys.contains(LogicalKeyboardKey.keyD)) {
-      deltaX += _playerSpeed;
-      // Left/right don't change sprite, use last vertical direction
-    }
-    if (_pressedKeys.contains(LogicalKeyboardKey.arrowUp) ||
-        _pressedKeys.contains(LogicalKeyboardKey.keyW)) {
-      deltaY += _playerSpeed; // Up is +y in game coordinates
-      newVerticalDirection = PlayerDirection.up;
-    }
-    if (_pressedKeys.contains(LogicalKeyboardKey.arrowDown) ||
-        _pressedKeys.contains(LogicalKeyboardKey.keyS)) {
-      deltaY -= _playerSpeed; // Down is -y in game coordinates
-      newVerticalDirection = PlayerDirection.down;
+    if (_isMobile) {
+      // Mobile: use joystick input
+      if (_joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1) {
+        deltaX = _joystickDeltaX * _playerSpeed;
+        deltaY = -_joystickDeltaY * _playerSpeed; // Invert Y for joystick (up is negative in joystick, but +y in game)
+        
+        // Determine direction based on joystick input
+        if (_joystickDeltaY.abs() > _joystickDeltaX.abs()) {
+          // Vertical movement dominates
+          newVerticalDirection = _joystickDeltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
+        } else if (_joystickDeltaX != 0) {
+          // Horizontal movement - use last vertical direction
+          // Direction already set to last vertical direction
+        }
+      }
+    } else {
+      // Desktop: use keyboard input
+      if (_pressedKeys.isEmpty) return;
+      
+      // Check which keys are pressed and calculate movement
+      if (_pressedKeys.contains(LogicalKeyboardKey.arrowLeft) ||
+          _pressedKeys.contains(LogicalKeyboardKey.keyA)) {
+        deltaX -= _playerSpeed;
+      }
+      if (_pressedKeys.contains(LogicalKeyboardKey.arrowRight) ||
+          _pressedKeys.contains(LogicalKeyboardKey.keyD)) {
+        deltaX += _playerSpeed;
+      }
+      if (_pressedKeys.contains(LogicalKeyboardKey.arrowUp) ||
+          _pressedKeys.contains(LogicalKeyboardKey.keyW)) {
+        deltaY += _playerSpeed; // Up is +y in game coordinates
+        newVerticalDirection = PlayerDirection.up;
+      }
+      if (_pressedKeys.contains(LogicalKeyboardKey.arrowDown) ||
+          _pressedKeys.contains(LogicalKeyboardKey.keyS)) {
+        deltaY -= _playerSpeed; // Down is -y in game coordinates
+        newVerticalDirection = PlayerDirection.down;
+      }
     }
     
     // Normalize diagonal movement (so diagonal speed equals horizontal/vertical speed)
@@ -374,28 +403,15 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: FocusNode()..requestFocus(),
-      onKeyEvent: (event) {
-        final key = event.logicalKey;
-        
-        // Track key presses/releases for continuous movement
-        if (event is KeyDownEvent) {
-          if (key == LogicalKeyboardKey.arrowLeft ||
-              key == LogicalKeyboardKey.keyA ||
-              key == LogicalKeyboardKey.arrowRight ||
-              key == LogicalKeyboardKey.keyD ||
-              key == LogicalKeyboardKey.arrowUp ||
-              key == LogicalKeyboardKey.keyW ||
-              key == LogicalKeyboardKey.arrowDown ||
-              key == LogicalKeyboardKey.keyS) {
-            _pressedKeys.add(key);
-          }
-        } else if (event is KeyUpEvent) {
-          _pressedKeys.remove(key);
-        }
-      },
-      child: Scaffold(
+    // Get screen dimensions and update game world size
+    final mediaQuery = MediaQuery.of(context);
+    _screenWidth = mediaQuery.size.width;
+    _screenHeight = mediaQuery.size.height;
+    
+    // Scale player size based on screen (maintain aspect ratio)
+    _playerSize = min(_screenWidth, _screenHeight) * 0.16; // ~16% of smaller dimension
+    
+    Widget gameContent = Scaffold(
         body: Stack(
           children: [
             // Gesture detector for closing modals when tapping outside
@@ -429,6 +445,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _char2Sprite,
                   _gameToScreenX,
                   _gameToScreenY,
+                  _playerSize, // Pass player size to painter
                 ),
                 size: Size.infinite,
               ),
@@ -490,28 +507,73 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
             ),
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                color: Colors.black54,
-                child: Text(
-                  widget.characterId == null 
-                      ? 'No character loaded - Select a character to play'
-                      : 'Use WASD or Arrow Keys to move',
-                  style: const TextStyle(color: Colors.white),
+            // Movement instructions (desktop only)
+            if (!_isMobile)
+              Positioned(
+                bottom: 16,
+                left: 16,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  color: Colors.black54,
+                  child: Text(
+                    widget.characterId == null 
+                        ? 'No character loaded - Select a character to play'
+                        : 'Use WASD or Arrow Keys to move',
+                    style: const TextStyle(color: Colors.white),
+                  ),
                 ),
               ),
-            ),
+            // Virtual joystick (mobile only)
+            if (_isMobile && widget.characterId != null)
+              Positioned(
+                bottom: 20,
+                left: 20,
+                child: VirtualJoystick(
+                  size: min(_screenWidth * 0.25, 150),
+                  onMove: (deltaX, deltaY) {
+                    setState(() {
+                      _joystickDeltaX = deltaX;
+                      _joystickDeltaY = deltaY;
+                    });
+                  },
+                ),
+              ),
             // Character creation modal (standalone, only when not in settings)
             if (_showCharacterCreateModal && !_showSettingsModal)
               _buildCharacterCreateModal(),
             ],
           ),
-        ),
-    );
+        );
+    
+    // Wrap with KeyboardListener only on desktop
+    if (_isMobile) {
+      return gameContent;
+    } else {
+      return KeyboardListener(
+        focusNode: FocusNode()..requestFocus(),
+        onKeyEvent: (event) {
+          final key = event.logicalKey;
+          
+          // Track key presses/releases for continuous movement
+          if (event is KeyDownEvent) {
+            if (key == LogicalKeyboardKey.arrowLeft ||
+                key == LogicalKeyboardKey.keyA ||
+                key == LogicalKeyboardKey.arrowRight ||
+                key == LogicalKeyboardKey.keyD ||
+                key == LogicalKeyboardKey.arrowUp ||
+                key == LogicalKeyboardKey.keyW ||
+                key == LogicalKeyboardKey.arrowDown ||
+                key == LogicalKeyboardKey.keyS) {
+              _pressedKeys.add(key);
+            }
+          } else if (event is KeyUpEvent) {
+            _pressedKeys.remove(key);
+          }
+        },
+        child: gameContent,
+      );
+    }
   }
 
   Widget _buildSettingsModal() {
@@ -1096,10 +1158,11 @@ class GameWorldPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     // Draw playable area with different colors based on position
-    const double playableWidth = 800.0;
-    const double playableHeight = 600.0;
-    const double halfWidth = playableWidth / 2;
-    const double halfHeight = playableHeight / 2;
+    // Use actual canvas size for responsive rendering
+    final double playableWidth = size.width;
+    final double playableHeight = size.height;
+    final double halfWidth = playableWidth / 2;
+    final double halfHeight = playableHeight / 2;
     
     // Top left: #F1FADC
     canvas.drawRect(
@@ -1137,28 +1200,29 @@ class GameWorldPainter extends CustomPainter {
         final sprite = _getSpriteForType(playerSpriteType);
         
         if (sprite != null) {
-          _drawSprite(canvas, sprite, screenX, screenY, 128, player.direction);
+          _drawSprite(canvas, sprite, screenX, screenY, playerSize, player.direction);
         } else {
           // Fallback to rectangle if sprite not loaded
           final paint = Paint()..color = Colors.blue;
           canvas.drawRect(
-            Rect.fromLTWH(screenX, screenY, 128, 128),
+            Rect.fromLTWH(screenX, screenY, playerSize, playerSize),
             paint,
           );
         }
         
         // Draw player name (centered above sprite)
+        final fontSize = playerSize * 0.1; // Scale font with player size
         final textPainter = TextPainter(
           text: TextSpan(
             text: player.name,
-            style: const TextStyle(color: Colors.black, fontSize: 12),
+            style: TextStyle(color: Colors.black, fontSize: fontSize),
           ),
           textDirection: TextDirection.ltr,
         );
         textPainter.layout();
-        // Center the text above the sprite (sprite size is 128)
-        final textX = screenX + (128 - textPainter.width) / 2;
-        textPainter.paint(canvas, Offset(textX, screenY - 16));
+        // Center the text above the sprite
+        final textX = screenX + (playerSize - textPainter.width) / 2;
+        textPainter.paint(canvas, Offset(textX, screenY - fontSize * 1.2));
       }
     }
 
@@ -1171,28 +1235,29 @@ class GameWorldPainter extends CustomPainter {
       
       final currentSprite = _getSpriteForType(currentPlayerSpriteType);
       if (currentSprite != null) {
-        _drawSprite(canvas, currentSprite, screenX, screenY, 128, currentPlayerDirection);
+        _drawSprite(canvas, currentSprite, screenX, screenY, playerSize, currentPlayerDirection);
       } else {
         // Fallback to rectangle if sprite not loaded
         final currentPlayerPaint = Paint()..color = Colors.red;
         canvas.drawRect(
-          Rect.fromLTWH(screenX, screenY, 128, 128),
+          Rect.fromLTWH(screenX, screenY, playerSize, playerSize),
           currentPlayerPaint,
         );
       }
       
       // Draw current player name (centered above sprite)
+      final fontSize = playerSize * 0.1; // Scale font with player size
       final textPainter = TextPainter(
         text: TextSpan(
           text: currentPlayerName,
-          style: const TextStyle(color: Colors.black, fontSize: 12),
+          style: TextStyle(color: Colors.black, fontSize: fontSize),
         ),
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
-      // Center the text above the sprite (sprite size is 128)
-      final textX = screenX + (128 - textPainter.width) / 2;
-      textPainter.paint(canvas, Offset(textX, screenY - 16));
+      // Center the text above the sprite
+      final textX = screenX + (playerSize - textPainter.width) / 2;
+      textPainter.paint(canvas, Offset(textX, screenY - fontSize * 1.2));
     }
   }
 
