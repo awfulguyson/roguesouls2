@@ -93,6 +93,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   PlayerDirection _lastVerticalDirection = PlayerDirection.down; // Track last up/down for left/right movement
   ui.Image? _char1Sprite;
   ui.Image? _char2Sprite;
+  ui.Image? _worldBackground;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
   String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view, 'howToPlay' = how to play
@@ -228,6 +229,17 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     final char2Codec = await ui.instantiateImageCodec(char2Bytes.buffer.asUint8List());
     final char2Frame = await char2Codec.getNextFrame();
     _char2Sprite = char2Frame.image;
+
+    // Load world background image
+    try {
+      final worldBytes = await rootBundle.load('assets/world-img.jpg');
+      final worldCodec = await ui.instantiateImageCodec(worldBytes.buffer.asUint8List());
+      final worldFrame = await worldCodec.getNextFrame();
+      _worldBackground = worldFrame.image;
+    } catch (e) {
+      print('Failed to load world background: $e');
+      _worldBackground = null;
+    }
 
     if (mounted) {
       setState(() {});
@@ -1318,6 +1330,7 @@ class GameWorldPainter extends CustomPainter {
   final String currentPlayerSpriteType;
   final ui.Image? char1Sprite;
   final ui.Image? char2Sprite;
+  final ui.Image? worldBackground;
   final double Function(double) worldToScreenX;
   final double Function(double) worldToScreenY;
   final double playerSize;
@@ -1394,8 +1407,8 @@ class GameWorldPainter extends CustomPainter {
       final worldEndY = playerY + size.height / 2;
       
       // Calculate source rect from background image (scale to world size)
-      final bgWidth = _worldBackground!.width.toDouble();
-      final bgHeight = _worldBackground!.height.toDouble();
+      final bgWidth = worldBackground!.width.toDouble();
+      final bgHeight = worldBackground!.height.toDouble();
       const worldWidth = 10000.0;
       const worldHeight = 10000.0;
       
@@ -1406,10 +1419,10 @@ class GameWorldPainter extends CustomPainter {
       final sourceHeight = ((worldEndY - worldStartY) / worldHeight) * bgHeight;
       
       final sourceRect = Rect.fromLTWH(
-        sourceX.clamp(0, bgWidth),
-        sourceY.clamp(0, bgHeight),
-        sourceWidth.clamp(0, bgWidth - sourceX),
-        sourceHeight.clamp(0, bgHeight - sourceY),
+        sourceX.clamp(0.0, bgWidth).toDouble(),
+        sourceY.clamp(0.0, bgHeight).toDouble(),
+        sourceWidth.clamp(0.0, bgWidth - sourceX).toDouble(),
+        sourceHeight.clamp(0.0, bgHeight - sourceY).toDouble(),
       );
       
       final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
