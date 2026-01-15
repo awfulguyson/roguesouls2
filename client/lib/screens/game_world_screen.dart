@@ -107,6 +107,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       // Send position updates periodically (every 50ms) to keep other players synced
       // Send even small movements for smoother synchronization
       _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+        if (widget.characterId == null) return;
         final dx = (_playerX - _lastSentX).abs();
         final dy = (_playerY - _lastSentY).abs();
         
@@ -253,46 +254,40 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.addPlayerJoinedListener(_playerJoinedCallback);
 
     _playerMovedCallback = (data) {
-      print('_playerMovedCallback called: playerId=${data['id']}, characterId=${widget.characterId}');
-      if (!mounted) {
-        print('Skipping: not mounted');
-        return;
-      }
+      if (!mounted) return;
       final playerId = data['id'] as String;
       // Skip our own movement updates (we handle our own position locally)
       if (widget.characterId != null && playerId == widget.characterId) {
-        print('Skipping own movement update');
         return;
       }
-      print('Processing movement for player: $playerId, in map: ${_players.containsKey(playerId)}');
+      
+      // Convert from screen coordinates (from server) to game coordinates
+      final screenX = (data['x'] as num).toDouble();
+      final screenY = (data['y'] as num).toDouble();
+      final newX = _screenToGameX(screenX);
+      final newY = _screenToGameY(screenY);
+      
+      // Always update state to trigger repaint, even if player already exists
       setState(() {
         if (_players.containsKey(playerId)) {
           final oldX = _players[playerId]!.x;
           final oldY = _players[playerId]!.y;
-          // Convert from screen coordinates (from server) to game coordinates
-          final screenX = (data['x'] as num).toDouble();
-          final screenY = (data['y'] as num).toDouble();
-          final newX = _screenToGameX(screenX);
-          final newY = _screenToGameY(screenY);
           
           _players[playerId]!.x = newX;
           _players[playerId]!.y = newY;
           
           // Infer direction from movement
-          // Only update if vertical movement (up/down), otherwise keep last vertical direction
           final dx = newX - oldX;
           final dy = newY - oldY;
           if (dy != 0) {
             // Vertical movement - update direction (in game coords, +y is up)
             _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
           }
-          // Horizontal movement (left/right) doesn't change the sprite direction
         } else {
           // Player moved but not in our list - add them (might be a late join)
-          print('Received movement for unknown player: $playerId, adding to map');
           final player = Player.fromJson(data);
-          player.x = _screenToGameX((data['x'] as num).toDouble());
-          player.y = _screenToGameY((data['y'] as num).toDouble());
+          player.x = newX;
+          player.y = newY;
           _players[playerId] = player;
         }
       });
@@ -415,21 +410,23 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             // Game world background
             Container(
               color: const Color(0xFF222222), // Dark grey background
-              child: CustomPaint(
-                painter: GameWorldPainter(
-                  _players,
-                  _playerX,
-                  _playerY,
-                  widget.characterId ?? '',
-                  widget.characterName ?? '',
-                  _playerDirection,
-                  widget.spriteType ?? 'char-1',
-                  _char1Sprite,
-                  _char2Sprite,
-                  _gameToScreenX,
-                  _gameToScreenY,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: GameWorldPainter(
+                    _players,
+                    _playerX,
+                    _playerY,
+                    widget.characterId ?? '',
+                    widget.characterName ?? '',
+                    _playerDirection,
+                    widget.spriteType ?? 'char-1',
+                    _char1Sprite,
+                    _char2Sprite,
+                    _gameToScreenX,
+                    _gameToScreenY,
+                  ),
+                  size: Size.infinite,
                 ),
-                size: Size.infinite,
               ),
             ),
             // Settings button (top left)
