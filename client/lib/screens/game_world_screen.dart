@@ -70,15 +70,17 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   void initState() {
     super.initState();
     _loadSprites();
+    // Set up callbacks BEFORE connecting to ensure we receive all events
     _setupGameService();
     _gameService.connect();
     _initializeAccount();
     
     // Connect to server to see other players (even without character)
-    // Wait for socket to connect
+    // Request player list when connected (callbacks are already set up)
     _gameService.socket?.on('connect', (_) {
       print('Socket connected, requesting player list...');
-      // Request current players list (server should send it on connection)
+      // Request current players list
+      _gameService.socket?.emit('game:requestPlayers');
     });
     
     // Only join game if character is loaded
@@ -102,12 +104,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         _updateMovement();
       });
       
-      // Send position updates periodically (every 100ms) to keep other players synced
-      _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      // Send position updates periodically (every 50ms) to keep other players synced
+      // Send even small movements for smoother synchronization
+      _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
         final dx = (_playerX - _lastSentX).abs();
         final dy = (_playerY - _lastSentY).abs();
         
-        if (dx > 1 || dy > 1) {
+        // Send if moved more than 0.5 pixels (more frequent updates)
+        if (dx > 0.5 || dy > 0.5) {
           // Send screen coordinates (convert game coordinates to screen for server)
           _gameService.movePlayer(_gameToScreenX(_playerX), _gameToScreenY(_playerY));
           _lastSentX = _playerX;
@@ -250,8 +254,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
     _playerMovedCallback = (data) {
       if (!mounted) return;
+      final playerId = data['id'] as String;
+      // Skip our own movement updates (we handle our own position locally)
+      if (widget.characterId != null && playerId == widget.characterId) {
+        return;
+      }
       setState(() {
-        final playerId = data['id'] as String;
         if (_players.containsKey(playerId)) {
           final oldX = _players[playerId]!.x;
           final oldY = _players[playerId]!.y;
@@ -273,6 +281,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
           }
           // Horizontal movement (left/right) doesn't change the sprite direction
+        } else {
+          // Player moved but not in our list - add them (might be a late join)
+          print('Received movement for unknown player: $playerId, adding to map');
+          final player = Player.fromJson(data);
+          player.x = _screenToGameX((data['x'] as num).toDouble());
+          player.y = _screenToGameY((data['y'] as num).toDouble());
+          _players[playerId] = player;
         }
       });
     };

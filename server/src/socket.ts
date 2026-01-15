@@ -86,8 +86,8 @@ export function setupSocketIO(io: Server) {
           player.x = data.x;
           player.y = data.y;
           
-          // Broadcast movement to all other players
-          socket.broadcast.emit('player:moved', {
+          // Broadcast movement to ALL players (including sender for consistency)
+          io.emit('player:moved', {
             id: player.id,
             x: data.x,
             y: data.y
