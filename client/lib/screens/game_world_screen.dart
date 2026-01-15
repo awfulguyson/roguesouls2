@@ -58,11 +58,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     final size = mediaQuery.size;
     
     // Mobile devices typically have:
-    // 1. Smaller screens (width or height < 768px)
+    // 1. Smaller screens (both width AND height < 768px, or very small in one dimension)
     // 2. Higher pixel density (devicePixelRatio > 1.5 for most mobile)
     // 3. Aspect ratio closer to phone/tablet (not ultra-wide desktop)
     
-    final isSmallScreen = size.width < 768 || size.height < 768;
+    // More lenient: only consider mobile if BOTH dimensions are small, or one is very small
+    final isSmallScreen = (size.width < 600 && size.height < 600) || 
+                          (size.width < 400 || size.height < 400);
     final hasHighDensity = mediaQuery.devicePixelRatio > 1.5;
     final aspectRatio = size.width / size.height;
     final isPhoneAspectRatio = aspectRatio > 0.5 && aspectRatio < 2.5; // Typical phone/tablet range
