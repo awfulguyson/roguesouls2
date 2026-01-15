@@ -34,15 +34,20 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   final GameService _gameService = GameService();
   final ApiService _apiService = ApiService();
   final Map<String, Player> _players = {};
-  // Game coordinates: center is (0, 0), left is -x, right is +x, up is +y, down is -y
-  double _playerX = 0.0; // Game X coordinate (center = 0)
-  double _playerY = 0.0; // Game Y coordinate (center = 0, up is +y, down is -y)
+  // Game world coordinates: world is 10000x10000, origin at (0, 0) in top-left
+  // Player position in world coordinates
+  double _playerX = 5000.0; // Start at center of world
+  double _playerY = 5000.0; // Start at center of world
   final double _playerSpeed = 5.0;
   double _playerSize = 128.0; // Player sprite size (will scale with screen)
   Timer? _positionUpdateTimer;
   Timer? _movementTimer;
   double _lastSentX = 0.0;
   double _lastSentY = 0.0;
+  
+  // World dimensions
+  static const double _worldWidth = 10000.0;
+  static const double _worldHeight = 10000.0;
   
   // Screen dimensions (playable area) - will be set from MediaQuery
   double _screenWidth = 800.0;
@@ -74,13 +79,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     return isSmallScreen && hasHighDensity && isPhoneAspectRatio;
   }
   
-  // Convert game coordinates to screen coordinates
-  double _gameToScreenX(double gameX) => gameX + _screenWidth / 2;
-  double _gameToScreenY(double gameY) => _screenHeight / 2 - gameY;
+  // Convert world coordinates to screen coordinates (camera system - player always centered)
+  // Camera follows player, so player position is the camera position
+  double _worldToScreenX(double worldX) => worldX - _playerX + _screenWidth / 2;
+  double _worldToScreenY(double worldY) => worldY - _playerY + _screenHeight / 2;
   
-  // Convert screen coordinates to game coordinates
-  double _screenToGameX(double screenX) => screenX - _screenWidth / 2;
-  double _screenToGameY(double screenY) => _screenHeight / 2 - screenY;
+  // Convert screen coordinates to world coordinates
+  double _screenToWorldX(double screenX) => screenX - _screenWidth / 2 + _playerX;
+  double _screenToWorldY(double screenY) => screenY - _screenHeight / 2 + _playerY;
   final Set<LogicalKeyboardKey> _pressedKeys = {};
   PlayerDirection _playerDirection = PlayerDirection.down;
   PlayerDirection _lastVerticalDirection = PlayerDirection.down; // Track last up/down for left/right movement
@@ -406,11 +412,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           _playerDirection = _lastVerticalDirection;
         }
         
-        // Keep player in bounds (game coordinates: center is 0,0)
-        // X ranges from -400 to +400 (half screen width minus half player size)
-        // Y ranges from -300 to +300 (half screen height minus half player size)
-        _playerX = _playerX.clamp(-(_screenWidth / 2 - _playerSize / 2), _screenWidth / 2 - _playerSize / 2);
-        _playerY = _playerY.clamp(-(_screenHeight / 2 - _playerSize / 2), _screenHeight / 2 - _playerSize / 2);
+        // Keep player in world bounds (world is 10000x10000)
+        _playerX = _playerX.clamp(_playerSize / 2, _worldWidth - _playerSize / 2);
+        _playerY = _playerY.clamp(_playerSize / 2, _worldHeight - _playerSize / 2);
       });
     }
   }
@@ -459,8 +463,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   widget.spriteType ?? 'char-1',
                   _char1Sprite,
                   _char2Sprite,
-                  _gameToScreenX,
-                  _gameToScreenY,
+                  _worldToScreenX,
+                  _worldToScreenY,
                   _playerSize, // Pass player size to painter
                 ),
                 size: Size.infinite,
@@ -1301,8 +1305,8 @@ class GameWorldPainter extends CustomPainter {
   final String currentPlayerSpriteType;
   final ui.Image? char1Sprite;
   final ui.Image? char2Sprite;
-  final double Function(double) gameToScreenX;
-  final double Function(double) gameToScreenY;
+  final double Function(double) worldToScreenX;
+  final double Function(double) worldToScreenY;
   final double playerSize;
 
   GameWorldPainter(
@@ -1315,16 +1319,16 @@ class GameWorldPainter extends CustomPainter {
     this.currentPlayerSpriteType,
     this.char1Sprite,
     this.char2Sprite,
-    this.gameToScreenX,
-    this.gameToScreenY,
+    this.worldToScreenX,
+    this.worldToScreenY,
     this.playerSize,
   );
 
   void _drawSprite(
     Canvas canvas,
     ui.Image sprite,
-    double x,
-    double y,
+    double worldX,
+    double worldY,
     double size,
     PlayerDirection direction,
   ) {
@@ -1343,7 +1347,16 @@ class GameWorldPainter extends CustomPainter {
       sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
     }
 
-    final destRect = Rect.fromLTWH(x, y, size, size);
+    // Convert world coordinates to screen coordinates
+    final screenX = worldToScreenX(worldX);
+    final screenY = worldToScreenY(worldY);
+    
+    // Center the sprite (x, y is the center of the sprite)
+    final destRect = Rect.fromCenter(
+      center: Offset(screenX, screenY),
+      width: size,
+      height: size,
+    );
     canvas.drawImageRect(sprite, sourceRect, destRect, Paint());
   }
 
@@ -1389,29 +1402,32 @@ class GameWorldPainter extends CustomPainter {
       Paint()..color = const Color(0xFFF1FADC),
     );
     
-    // Draw other players (convert game coordinates to screen coordinates)
+    // Draw other players (world coordinates)
     for (var player in players.values) {
       if (player.id != currentPlayerId) {
-        // Convert player game coordinates to screen coordinates
-        // Note: assuming players come from server in game coordinates
-        final screenX = gameToScreenX(player.x);
-        final screenY = gameToScreenY(player.y);
-        
         final playerSpriteType = player.spriteType ?? 'char-2';
         final sprite = _getSpriteForType(playerSpriteType);
         
         if (sprite != null) {
-          _drawSprite(canvas, sprite, screenX, screenY, playerSize, player.direction);
+          _drawSprite(canvas, sprite, player.x, player.y, playerSize, player.direction);
         } else {
           // Fallback to rectangle if sprite not loaded
+          final screenX = worldToScreenX(player.x);
+          final screenY = worldToScreenY(player.y);
           final paint = Paint()..color = Colors.blue;
           canvas.drawRect(
-            Rect.fromLTWH(screenX, screenY, playerSize, playerSize),
+            Rect.fromCenter(
+              center: Offset(screenX, screenY),
+              width: playerSize,
+              height: playerSize,
+            ),
             paint,
           );
         }
         
         // Draw player name (centered above sprite)
+        final screenX = worldToScreenX(player.x);
+        final screenY = worldToScreenY(player.y);
         final fontSize = playerSize * 0.1; // Scale font with player size
         final textPainter = TextPainter(
           text: TextSpan(
@@ -1421,32 +1437,37 @@ class GameWorldPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
         );
         textPainter.layout();
-        // Center the text above the sprite
-        final textX = screenX + (playerSize - textPainter.width) / 2;
-        textPainter.paint(canvas, Offset(textX, screenY - fontSize * 1.2));
+        // Center the text above the sprite (sprite is centered, so text is centered above)
+        final textX = screenX - textPainter.width / 2;
+        textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
       }
     }
 
-    // Draw current player (on top) - use character's sprite type
+    // Draw current player (on top) - always at screen center
     // Only draw if character is loaded
     if (currentPlayerId.isNotEmpty && currentPlayerName.isNotEmpty) {
-      // Convert current player game coordinates to screen coordinates
-      final screenX = gameToScreenX(playerX);
-      final screenY = gameToScreenY(playerY);
-      
       final currentSprite = _getSpriteForType(currentPlayerSpriteType);
       if (currentSprite != null) {
-        _drawSprite(canvas, currentSprite, screenX, screenY, playerSize, currentPlayerDirection);
+        // Current player is always at screen center (world position is playerX, playerY)
+        _drawSprite(canvas, currentSprite, playerX, playerY, playerSize, currentPlayerDirection);
       } else {
         // Fallback to rectangle if sprite not loaded
+        final screenX = worldToScreenX(playerX);
+        final screenY = worldToScreenY(playerY);
         final currentPlayerPaint = Paint()..color = Colors.red;
         canvas.drawRect(
-          Rect.fromLTWH(screenX, screenY, playerSize, playerSize),
+          Rect.fromCenter(
+            center: Offset(screenX, screenY),
+            width: playerSize,
+            height: playerSize,
+          ),
           currentPlayerPaint,
         );
       }
       
       // Draw current player name (centered above sprite)
+      final screenX = worldToScreenX(playerX);
+      final screenY = worldToScreenY(playerY);
       final fontSize = playerSize * 0.1; // Scale font with player size
       final textPainter = TextPainter(
         text: TextSpan(
@@ -1456,9 +1477,9 @@ class GameWorldPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
-      // Center the text above the sprite
-      final textX = screenX + (playerSize - textPainter.width) / 2;
-      textPainter.paint(canvas, Offset(textX, screenY - fontSize * 1.2));
+      // Center the text above the sprite (sprite is centered, so text is centered above)
+      final textX = screenX - textPainter.width / 2;
+      textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
     }
   }
 
