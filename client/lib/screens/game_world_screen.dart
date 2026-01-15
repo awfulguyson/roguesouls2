@@ -166,8 +166,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       widget.characterId!,
       widget.characterName!,
       spriteType: widget.spriteType ?? 'char-1',
-      x: screenX,
-      y: screenY,
+      x: _playerX,
+      y: _playerY,
     );
     _lastSentX = _playerX;
     _lastSentY = _playerY;
