@@ -529,23 +529,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
             ),
-            // Movement instructions (desktop only)
-            if (!isMobile)
-              Positioned(
-                bottom: 16,
-                left: 16,
-                right: 16,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  color: Colors.black54,
-                  child: Text(
-                    widget.characterId == null 
-                        ? 'No character loaded - Select a character to play'
-                        : 'Use WASD or Arrow Keys to move',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
             // Virtual joystick (mobile only)
             if (isMobile && widget.characterId != null)
               Positioned(
