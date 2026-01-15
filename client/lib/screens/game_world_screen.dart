@@ -86,7 +86,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   ui.Image? _char2Sprite;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
-  String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view
+  String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view, 'howToPlay' = how to play
   bool _joystickOnRight = true; // Default: joystick on right side
   Map<String, dynamic>? _selectedCharacter; // Selected character in character select screen
   String? _accountId;
