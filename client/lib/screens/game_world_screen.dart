@@ -988,10 +988,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   // Store callback references so we can remove them on dispose
-  Function(Map<String, dynamic>)? _playerJoinedCallback;
-  Function(Map<String, dynamic>)? _playerMovedCallback;
-  Function(Map<String, dynamic>)? _playerLeftCallback;
-  Function(List<dynamic>)? _playersListCallback;
+  Function(Map<String, dynamic>) _playerJoinedCallback = (_) {};
+  Function(Map<String, dynamic>) _playerMovedCallback = (_) {};
+  Function(Map<String, dynamic>) _playerLeftCallback = (_) {};
+  Function(List<dynamic>) _playersListCallback = (_) {};
 
   @override
   void dispose() {
