@@ -619,6 +619,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           ),
           child: _settingsView == 'characterSelect'
               ? _buildCharacterSelectContent()
+              : _settingsView == 'settings'
+              ? _buildSettingsContent()
+              : _settingsView == 'howToPlay'
+              ? _buildHowToPlayContent()
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -628,7 +632,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            'Settings',
+                            'Menu',
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                           IconButton(
@@ -651,9 +655,35 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         children: [
                           ListTile(
                             dense: true,
+                            leading: const Icon(Icons.help_outline, size: 20),
+                            title: const Text(
+                              'How to Play',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            onTap: () {
+                              setState(() {
+                                _settingsView = 'howToPlay';
+                              });
+                            },
+                          ),
+                          ListTile(
+                            dense: true,
                             leading: const Icon(Icons.settings, size: 20),
                             title: const Text(
                               'Settings',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            onTap: () {
+                              setState(() {
+                                _settingsView = 'settings';
+                              });
+                            },
+                          ),
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.person, size: 20),
+                            title: Text(
+                              'Select Character',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: _characters.isEmpty ? Colors.grey : null,
@@ -859,6 +889,175 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
               },
               child: const Text('Create Character', style: TextStyle(fontSize: 12)),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHowToPlayContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'How to Play',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.arrow_back, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _settingsView = null;
+                  });
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+        const Divider(),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Getting Started',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '1. Create or select a character to enter the game world',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Movement',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Desktop:',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '• Use WASD keys or Arrow keys to move your character',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Mobile:',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '• Use the virtual joystick to move your character',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const Text(
+                  '• You can change the joystick position in Settings',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Multiplayer',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '• You can see other players in real-time as they move around the world',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const Text(
+                  '• All players share the same game world',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Tips',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  '• Use the Menu button (top left) to access settings and character selection',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const Text(
+                  '• Your character position is saved automatically',
+                  style: TextStyle(fontSize: 14),
+                ),
+                const Text(
+                  '• You can create multiple characters and switch between them',
+                  style: TextStyle(fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsContent() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Settings',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.arrow_back, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _settingsView = null;
+                  });
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+        const Divider(),
+        Expanded(
+          child: ListView(
+            children: [
+              // Joystick position toggle
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.gamepad, size: 20),
+                title: const Text(
+                  'Joystick Position',
+                  style: TextStyle(fontSize: 14),
+                ),
+                subtitle: Text(
+                  _joystickOnRight ? 'Right' : 'Left',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: Switch(
+                  value: _joystickOnRight,
+                  onChanged: (value) {
+                    setState(() {
+                      _joystickOnRight = value;
+                    });
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       ],
