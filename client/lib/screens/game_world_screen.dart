@@ -1803,57 +1803,45 @@ class GameWorldPainter extends CustomPainter {
     );
     
     if (worldBackground != null) {
-      final worldStartX = playerX - size.width / 2;
-      final worldStartY = playerY - size.height / 2;
-      final worldEndX = playerX + size.width / 2;
-      final worldEndY = playerY + size.height / 2;
-      
       final bgWidth = worldBackground!.width.toDouble();
       final bgHeight = worldBackground!.height.toDouble();
       const worldWidth = 10000.0;
       const worldHeight = 10000.0;
       
-      final clampedWorldStartX = worldStartX.clamp(_worldMinX, _worldMaxX);
-      final clampedWorldStartY = worldStartY.clamp(_worldMinY, _worldMaxY);
-      final clampedWorldEndX = worldEndX.clamp(_worldMinX, _worldMaxX);
-      final clampedWorldEndY = worldEndY.clamp(_worldMinY, _worldMaxY);
+      // Calculate what world coordinates we want to see (centered on player)
+      final worldViewStartX = playerX - size.width / 2;
+      final worldViewStartY = playerY - size.height / 2;
+      final worldViewEndX = playerX + size.width / 2;
+      final worldViewEndY = playerY + size.height / 2;
       
-      final normalizedStartX = (clampedWorldStartX - _worldMinX) / worldWidth;
-      final normalizedStartY = (clampedWorldStartY - _worldMinY) / worldHeight;
-      final normalizedEndX = (clampedWorldEndX - _worldMinX) / worldWidth;
-      final normalizedEndY = (clampedWorldEndY - _worldMinY) / worldHeight;
+      // Clamp to actual world bounds
+      final clampedStartX = worldViewStartX.clamp(_worldMinX, _worldMaxX);
+      final clampedStartY = worldViewStartY.clamp(_worldMinY, _worldMaxY);
+      final clampedEndX = worldViewEndX.clamp(_worldMinX, _worldMaxX);
+      final clampedEndY = worldViewEndY.clamp(_worldMinY, _worldMaxY);
       
-      final sourceX = normalizedStartX * bgWidth;
-      final sourceY = normalizedStartY * bgHeight;
-      final sourceWidth = (normalizedEndX - normalizedStartX) * bgWidth;
-      final sourceHeight = (normalizedEndY - normalizedStartY) * bgHeight;
+      // Normalize to [0, 1] range within world bounds
+      final normStartX = (clampedStartX - _worldMinX) / worldWidth;
+      final normStartY = (clampedStartY - _worldMinY) / worldHeight;
+      final normEndX = (clampedEndX - _worldMinX) / worldWidth;
+      final normEndY = (clampedEndY - _worldMinY) / worldHeight;
       
-      final screenOffsetX = clampedWorldStartX - worldStartX;
-      final screenOffsetY = clampedWorldStartY - worldStartY;
+      // Map to background image coordinates
+      final sourceX = normStartX * bgWidth;
+      final sourceY = normStartY * bgHeight;
+      final sourceW = (normEndX - normStartX) * bgWidth;
+      final sourceH = (normEndY - normStartY) * bgHeight;
       
-      final clampedSourceX = sourceX.clamp(0.0, bgWidth);
-      final clampedSourceY = sourceY.clamp(0.0, bgHeight);
-      final clampedSourceWidth = (sourceWidth).clamp(0.0, bgWidth - clampedSourceX);
-      final clampedSourceHeight = (sourceHeight).clamp(0.0, bgHeight - clampedSourceY);
-      
+      // Source rectangle (clamped to image bounds)
       final sourceRect = Rect.fromLTWH(
-        clampedSourceX,
-        clampedSourceY,
-        clampedSourceWidth,
-        clampedSourceHeight,
+        sourceX.clamp(0.0, bgWidth),
+        sourceY.clamp(0.0, bgHeight),
+        sourceW.clamp(0.0, bgWidth - sourceX.clamp(0.0, bgWidth)),
+        sourceH.clamp(0.0, bgHeight - sourceY.clamp(0.0, bgHeight)),
       );
       
-      final destX = screenOffsetX > 0 ? screenOffsetX : 0.0;
-      final destY = screenOffsetY > 0 ? screenOffsetY : 0.0;
-      final destWidth = screenOffsetX > 0 ? clampedSourceWidth : (clampedSourceWidth + screenOffsetX);
-      final destHeight = screenOffsetY > 0 ? clampedSourceHeight : (clampedSourceHeight + screenOffsetY);
-      
-      final destRect = Rect.fromLTWH(
-        destX,
-        destY,
-        destWidth.clamp(0.0, size.width - destX),
-        destHeight.clamp(0.0, size.height - destY),
-      );
+      // Destination always fills entire screen
+      final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
       
       canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
     }
