@@ -327,12 +327,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         }
         
         // Always trigger setState to ensure repaint
+        // The timer will handle smooth interpolation in the next frame
         if (mounted) {
           setState(() {});
         }
-        
-        // Trigger immediate interpolation update
-        _interpolateOtherPlayers();
       } else {
         setState(() {
           final player = Player.fromJson(data);
