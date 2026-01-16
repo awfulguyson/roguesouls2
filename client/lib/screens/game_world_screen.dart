@@ -302,35 +302,31 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       print('Received player:moved event: $playerId at ($newX, $newY)');
       
       if (_players.containsKey(playerId)) {
-        final player = _players[playerId]!;
-        final oldX = player.x;
-        final oldY = player.y;
-        
-        final dx = newX - oldX;
-        final dy = newY - oldY;
-        
-        // Update direction based on movement
-        if (dy != 0) {
-          player.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
-        }
-        
-        // Set target for interpolation
-        _playerTargetPositions[playerId] = Offset(newX, newY);
-        _playerLastUpdateTime[playerId] = DateTime.now();
-        
-        // Update position immediately for large movements to make it visible right away
-        final distance = sqrt(dx * dx + dy * dy);
-        if (distance > 5.0) {
-          // For large movements, jump closer immediately
-          player.x = oldX + (dx * 0.5);
-          player.y = oldY + (dy * 0.5);
-        }
-        
-        // Always trigger setState to ensure repaint
-        // The timer will handle smooth interpolation in the next frame
-        if (mounted) {
-          setState(() {});
-        }
+        setState(() {
+          final player = _players[playerId]!;
+          final oldX = player.x;
+          final oldY = player.y;
+          
+          final dx = newX - oldX;
+          final dy = newY - oldY;
+          
+          // Update direction based on movement
+          if (dy != 0) {
+            player.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
+          }
+          
+          // Set target for interpolation
+          _playerTargetPositions[playerId] = Offset(newX, newY);
+          _playerLastUpdateTime[playerId] = DateTime.now();
+          
+          // Update position immediately for large movements to make it visible right away
+          final distance = sqrt(dx * dx + dy * dy);
+          if (distance > 5.0) {
+            // For large movements, jump closer immediately
+            player.x = oldX + (dx * 0.5);
+            player.y = oldY + (dy * 0.5);
+          }
+        });
       } else {
         setState(() {
           final player = Player.fromJson(data);
@@ -421,10 +417,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   void _interpolateOtherPlayers() {
+    if (!mounted || _playerTargetPositions.isEmpty) return;
+    
     final now = DateTime.now();
     bool needsUpdate = false;
-    
-    if (_playerTargetPositions.isEmpty) return;
+    final targetsToRemove = <String>[];
     
     for (var entry in _playerTargetPositions.entries) {
       final playerId = entry.key;
@@ -442,36 +439,31 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           player.y = targetPos.dy;
           needsUpdate = true;
         } else {
-          // Remove from target positions if we're close enough
-          _playerTargetPositions.remove(playerId);
+          // Mark for removal if we're close enough
+          targetsToRemove.add(playerId);
         }
       } else {
-        final lastUpdate = _playerLastUpdateTime[playerId];
-        final timeSinceUpdate = lastUpdate != null 
-            ? now.difference(lastUpdate).inMilliseconds 
-            : 50;
-        
         final lerpFactor = (distance > 10) ? 0.3 : 0.15;
         
         final newX = currentPos.dx + (targetPos.dx - currentPos.dx) * lerpFactor;
         final newY = currentPos.dy + (targetPos.dy - currentPos.dy) * lerpFactor;
         
-        // Always update if there's any movement, even tiny
-        if ((player.x - newX).abs() > 0.001 || (player.y - newY).abs() > 0.001) {
+        // Only update if there's meaningful movement
+        if ((player.x - newX).abs() > 0.01 || (player.y - newY).abs() > 0.01) {
           player.x = newX;
           player.y = newY;
           needsUpdate = true;
-        } else {
-          // Still mark as needing update if we have a target (to keep animation smooth)
-          if (distance > 0.1) {
-            needsUpdate = true;
-          }
         }
       }
     }
     
-    // Always call setState if there are active target positions to ensure smooth animation
-    if ((needsUpdate || _playerTargetPositions.isNotEmpty) && mounted) {
+    // Remove completed targets
+    for (var playerId in targetsToRemove) {
+      _playerTargetPositions.remove(playerId);
+    }
+    
+    // Only call setState if there was an actual update
+    if (needsUpdate && mounted) {
       setState(() {});
     }
   }
