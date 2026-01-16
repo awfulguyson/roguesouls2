@@ -304,24 +304,28 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         final oldX = _players[playerId]!.x;
         final oldY = _players[playerId]!.y;
         
+        final dx = newX - oldX;
+        final dy = newY - oldY;
+        
+        // Update direction based on movement
+        if (dy != 0) {
+          _players[playerId]!.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
+        }
+        
+        // Set target for interpolation
         _playerTargetPositions[playerId] = Offset(newX, newY);
         _playerLastUpdateTime[playerId] = DateTime.now();
         
-        final dx = newX - oldX;
-        final dy = newY - oldY;
-        if (dy != 0) {
-          _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
-        }
-        
-        if (mounted) {
-          setState(() {});
-        }
+        // Trigger immediate interpolation update to make movement visible
+        _interpolateOtherPlayers();
       } else {
         setState(() {
           final player = Player.fromJson(data);
           player.x = newX;
           player.y = newY;
           _players[playerId] = player;
+          _playerTargetPositions[playerId] = Offset(newX, newY);
+          _playerLastUpdateTime[playerId] = DateTime.now();
         });
       }
     };
@@ -407,6 +411,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     final now = DateTime.now();
     bool needsUpdate = false;
     
+    if (_playerTargetPositions.isEmpty) return;
+    
     for (var entry in _playerTargetPositions.entries) {
       final playerId = entry.key;
       final targetPos = entry.value;
@@ -422,6 +428,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           player.x = targetPos.dx;
           player.y = targetPos.dy;
           needsUpdate = true;
+        } else {
+          // Remove from target positions if we're close enough
+          _playerTargetPositions.remove(playerId);
         }
       } else {
         final lastUpdate = _playerLastUpdateTime[playerId];
@@ -434,7 +443,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         final newX = currentPos.dx + (targetPos.dx - currentPos.dx) * lerpFactor;
         final newY = currentPos.dy + (targetPos.dy - currentPos.dy) * lerpFactor;
         
-        if ((player.x - newX).abs() > 0.01 || (player.y - newY).abs() > 0.01) {
+        // Always update if there's any movement, even tiny
+        if ((player.x - newX).abs() > 0.001 || (player.y - newY).abs() > 0.001) {
           player.x = newX;
           player.y = newY;
           needsUpdate = true;
