@@ -94,9 +94,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   
   // Convert world coordinates to screen coordinates (camera system - player always centered)
   // Camera follows player, so player position is the camera position
-  // When player moves up (Y increases), objects should appear to move up on screen
+  // World: Y increases as you go UP (toward 5000), Y decreases as you go DOWN (toward -5000)
+  // Screen: Y increases as you go DOWN, Y decreases as you go UP
+  // So when world Y increases, screen Y should DECREASE (invert the Y axis)
   double _worldToScreenX(double worldX) => worldX - _playerX + _screenWidth / 2;
-  double _worldToScreenY(double worldY) => worldY - _playerY + _screenHeight / 2;
+  double _worldToScreenY(double worldY) => _playerY - worldY + _screenHeight / 2;
   
   // Convert screen coordinates to world coordinates
   double _screenToWorldX(double screenX) => screenX - _screenWidth / 2 + _playerX;
