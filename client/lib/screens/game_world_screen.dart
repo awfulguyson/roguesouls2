@@ -41,7 +41,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   // Player position in world coordinates
   double _playerX = 5000.0; // Start at center of world
   double _playerY = 5000.0; // Start at center of world
-  final double _playerSpeed = 2.5; // Reduced by half
+  double _playerSpeed = 2.5; // Base speed (can be modified by dev tools)
   double _playerSize = 128.0; // Player sprite size (will scale with screen)
   Timer? _positionUpdateTimer;
   Timer? _movementTimer;
@@ -104,10 +104,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   ui.Image? _worldBackground;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
-  String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view, 'howToPlay' = how to play
+  String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view, 'howToPlay' = how to play, 'devTools' = dev tools
   String _joystickMode = 'fixed-right'; // 'fixed-left', 'fixed-right', 'floating-left', 'floating-right'
   Offset? _floatingJoystickPosition; // Position for floating joystick
   bool _showFloatingJoystick = false; // Whether floating joystick is visible
+  bool _showDevTools = false; // Whether dev tools panel is visible
   Map<String, dynamic>? _selectedCharacter; // Selected character in character select screen
   String? _accountId;
   List<dynamic> _characters = [];
@@ -439,8 +440,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         }
         
         // Keep player in world bounds (world is 10000x10000)
-        _playerX = _playerX.clamp(_playerSize / 2, _worldWidth - _playerSize / 2);
-        _playerY = _playerY.clamp(_playerSize / 2, _worldHeight - _playerSize / 2);
+        // Allow player to go to exact edges (0 and 10000)
+        _playerX = _playerX.clamp(0.0, _worldWidth);
+        _playerY = _playerY.clamp(0.0, _worldHeight);
       });
     }
   }
@@ -496,8 +498,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _screenWidth = mediaQuery.size.width;
     _screenHeight = mediaQuery.size.height;
     
-    // Scale player size based on screen (maintain aspect ratio)
-    _playerSize = min(_screenWidth, _screenHeight) * 0.16; // ~16% of smaller dimension
+    // Keep player size constant (not scaled with screen)
+    _playerSize = 128.0; // Fixed size regardless of screen dimensions
     
     final isMobile = _isMobileDevice(context);
     
@@ -852,6 +854,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
               ? _buildSettingsContent()
               : _settingsView == 'howToPlay'
               ? _buildHowToPlayContent()
+              : _settingsView == 'devTools'
+              ? _buildDevToolsContent()
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -905,6 +909,19 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                             onTap: () {
                               setState(() {
                                 _settingsView = 'settings';
+                              });
+                            },
+                          ),
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.build, size: 20),
+                            title: const Text(
+                              'Dev Tools',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            onTap: () {
+                              setState(() {
+                                _settingsView = 'devTools';
                               });
                             },
                           ),
@@ -1229,6 +1246,189 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDevToolsContent() {
+    final teleportXController = TextEditingController(text: _playerX.toInt().toString());
+    final teleportYController = TextEditingController(text: _playerY.toInt().toString());
+    
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(4.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Dev Tools',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.arrow_back, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _settingsView = null;
+                  });
+                },
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+        ),
+        const Divider(),
+        Expanded(
+          child: ListView(
+            children: [
+              // Movement Speed Control
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Movement Speed: ${_playerSpeed.toStringAsFixed(1)}',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Slider(
+                      value: _playerSpeed,
+                      min: 0.5,
+                      max: 20.0,
+                      divisions: 39,
+                      label: _playerSpeed.toStringAsFixed(1),
+                      onChanged: (value) {
+                        setState(() {
+                          _playerSpeed = value;
+                        });
+                      },
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _playerSpeed = 2.5; // Reset to default
+                            });
+                          },
+                          child: const Text('Reset'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _playerSpeed = 5.0; // Fast
+                            });
+                          },
+                          child: const Text('Fast'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _playerSpeed = 10.0; // Very Fast
+                            });
+                          },
+                          child: const Text('Very Fast'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              // Teleport Section
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Teleport',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: teleportXController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'X',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            ),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: teleportYController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Y',
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            ),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {
+                            final x = double.tryParse(teleportXController.text);
+                            final y = double.tryParse(teleportYController.text);
+                            if (x != null && y != null) {
+                              setState(() {
+                                _playerX = x.clamp(0.0, _worldWidth);
+                                _playerY = y.clamp(0.0, _worldHeight);
+                                // Update last sent position to prevent unnecessary network updates
+                                _lastSentX = _playerX;
+                                _lastSentY = _playerY;
+                                // Send teleport to server
+                                if (widget.characterId != null) {
+                                  _gameService.movePlayer(_playerX, _playerY);
+                                }
+                              });
+                            }
+                          },
+                          child: const Text('Teleport'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              teleportXController.text = _playerX.toInt().toString();
+                              teleportYController.text = _playerY.toInt().toString();
+                            });
+                          },
+                          child: const Text('Current'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              teleportXController.text = '5000';
+                              teleportYController.text = '5000';
+                            });
+                          },
+                          child: const Text('Center'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -1650,11 +1850,15 @@ class GameWorldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Always draw black background first (for areas outside world bounds)
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = Colors.black,
+    );
+    
     // Draw world background image
     if (worldBackground != null) {
-      // Calculate the visible world area
-      // When player moves up (Y increases), we want to show lower parts of the image
-      // So we need to invert the Y calculation
+      // Calculate the visible world area (camera view)
       final worldStartX = playerX - size.width / 2;
       final worldStartY = playerY - size.height / 2;
       final worldEndX = playerX + size.width / 2;
@@ -1666,31 +1870,39 @@ class GameWorldPainter extends CustomPainter {
       const worldWidth = 10000.0;
       const worldHeight = 10000.0;
       
+      // Clamp world coordinates to valid range
+      final clampedWorldStartX = worldStartX.clamp(0.0, worldWidth);
+      final clampedWorldStartY = worldStartY.clamp(0.0, worldHeight);
+      final clampedWorldEndX = worldEndX.clamp(0.0, worldWidth);
+      final clampedWorldEndY = worldEndY.clamp(0.0, worldHeight);
+      
       // Calculate which part of the background image to show
       // X is straightforward: left to right
-      final sourceX = (worldStartX / worldWidth) * bgWidth;
+      final sourceX = (clampedWorldStartX / worldWidth) * bgWidth;
       // Y needs to be inverted: when player Y increases (moves up), show lower part of image
-      // So we calculate from the bottom: worldHeight - worldStartY
-      final sourceY = ((worldHeight - worldEndY) / worldHeight) * bgHeight;
-      final sourceWidth = ((worldEndX - worldStartX) / worldWidth) * bgWidth;
-      final sourceHeight = ((worldEndY - worldStartY) / worldHeight) * bgHeight;
+      final sourceY = ((worldHeight - clampedWorldEndY) / worldHeight) * bgHeight;
+      final sourceWidth = ((clampedWorldEndX - clampedWorldStartX) / worldWidth) * bgWidth;
+      final sourceHeight = ((clampedWorldEndY - clampedWorldStartY) / worldHeight) * bgHeight;
+      
+      // Calculate screen position for the background (offset if camera is outside world)
+      final screenOffsetX = (clampedWorldStartX - worldStartX);
+      final screenOffsetY = (clampedWorldStartY - worldStartY);
       
       final sourceRect = Rect.fromLTWH(
-        sourceX.clamp(0.0, bgWidth).toDouble(),
-        sourceY.clamp(0.0, bgHeight).toDouble(),
-        sourceWidth.clamp(0.0, bgWidth - sourceX).toDouble(),
-        sourceHeight.clamp(0.0, bgHeight - sourceY).toDouble(),
+        sourceX.clamp(0.0, bgWidth),
+        sourceY.clamp(0.0, bgHeight),
+        sourceWidth.clamp(0.0, bgWidth - sourceX.clamp(0.0, bgWidth)),
+        sourceHeight.clamp(0.0, bgHeight - sourceY.clamp(0.0, bgHeight)),
       );
       
-      final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
+      final destRect = Rect.fromLTWH(
+        screenOffsetX,
+        screenOffsetY,
+        sourceWidth,
+        sourceHeight,
+      );
       
       canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
-    } else {
-      // Fallback: draw black background if image not loaded
-      canvas.drawRect(
-        Rect.fromLTWH(0, 0, size.width, size.height),
-        Paint()..color = Colors.black,
-      );
     }
     
     // Draw other players (world coordinates)
