@@ -368,6 +368,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           // Vertical movement - update direction (in game coords, +y is up)
           _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
         }
+        
+        // Trigger repaint for interpolation to work
+        if (mounted) {
+          setState(() {});
+        }
       } else {
         // Player moved but not in our list - add them (might be a late join)
         setState(() {
@@ -506,12 +511,19 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         // Faster interpolation for larger distances, slower for small
         final lerpFactor = (distance > 10) ? 0.3 : 0.15;
         
-        player.x = currentPos.dx + (targetPos.dx - currentPos.dx) * lerpFactor;
-        player.y = currentPos.dy + (targetPos.dy - currentPos.dy) * lerpFactor;
-        needsUpdate = true;
+        final newX = currentPos.dx + (targetPos.dx - currentPos.dx) * lerpFactor;
+        final newY = currentPos.dy + (targetPos.dy - currentPos.dy) * lerpFactor;
+        
+        // Only update if position actually changed
+        if ((player.x - newX).abs() > 0.01 || (player.y - newY).abs() > 0.01) {
+          player.x = newX;
+          player.y = newY;
+          needsUpdate = true;
+        }
       }
     }
     
+    // Only call setState if something actually changed
     if (needsUpdate && mounted) {
       setState(() {});
     }
@@ -1910,27 +1922,45 @@ class GameWorldPainter extends CustomPainter {
       // Calculate which part of the background image to show
       // X is straightforward: left to right
       final sourceX = (clampedWorldStartX / worldWidth) * bgWidth;
-      // Y needs to be inverted: when player Y increases (moves up), show lower part of image
-      final sourceY = ((worldHeight - clampedWorldEndY) / worldHeight) * bgHeight;
+      // Y: when player Y increases (moves up in world), we want to show lower part of image
+      // World Y=0 is top, Y=10000 is bottom. Image Y=0 is top, Y=bgHeight is bottom.
+      // So when world Y increases, sourceY should increase (move down in image)
+      final sourceY = (clampedWorldStartY / worldHeight) * bgHeight;
       final sourceWidth = ((clampedWorldEndX - clampedWorldStartX) / worldWidth) * bgWidth;
       final sourceHeight = ((clampedWorldEndY - clampedWorldStartY) / worldHeight) * bgHeight;
       
-      // Calculate screen position for the background (offset if camera is outside world)
-      final screenOffsetX = (clampedWorldStartX - worldStartX);
-      final screenOffsetY = (clampedWorldStartY - worldStartY);
+      // Calculate screen position for the background
+      // If camera is outside world bounds, offset the destination to show black
+      final screenOffsetX = clampedWorldStartX - worldStartX;
+      final screenOffsetY = clampedWorldStartY - worldStartY;
+      
+      // Clamp source rect to image bounds
+      final clampedSourceX = sourceX.clamp(0.0, bgWidth);
+      final clampedSourceY = sourceY.clamp(0.0, bgHeight);
+      final clampedSourceWidth = (sourceWidth).clamp(0.0, bgWidth - clampedSourceX);
+      final clampedSourceHeight = (sourceHeight).clamp(0.0, bgHeight - clampedSourceY);
       
       final sourceRect = Rect.fromLTWH(
-        sourceX.clamp(0.0, bgWidth),
-        sourceY.clamp(0.0, bgHeight),
-        sourceWidth.clamp(0.0, bgWidth - sourceX.clamp(0.0, bgWidth)),
-        sourceHeight.clamp(0.0, bgHeight - sourceY.clamp(0.0, bgHeight)),
+        clampedSourceX,
+        clampedSourceY,
+        clampedSourceWidth,
+        clampedSourceHeight,
       );
       
+      // Destination rect on screen
+      // screenOffsetX/Y can be negative if camera is outside world bounds
+      // In that case, we want to show black, so we offset the destination
+      final destX = screenOffsetX > 0 ? screenOffsetX : 0.0;
+      final destY = screenOffsetY > 0 ? screenOffsetY : 0.0;
+      // Adjust width/height if we're offset
+      final destWidth = screenOffsetX > 0 ? clampedSourceWidth : (clampedSourceWidth + screenOffsetX);
+      final destHeight = screenOffsetY > 0 ? clampedSourceHeight : (clampedSourceHeight + screenOffsetY);
+      
       final destRect = Rect.fromLTWH(
-        screenOffsetX,
-        screenOffsetY,
-        sourceWidth,
-        sourceHeight,
+        destX,
+        destY,
+        destWidth.clamp(0.0, size.width - destX),
+        destHeight.clamp(0.0, size.height - destY),
       );
       
       canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
