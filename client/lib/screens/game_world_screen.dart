@@ -347,7 +347,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     
     if (isUsingJoystick) {
       deltaX = _joystickDeltaX * _playerSpeed;
-      deltaY = -_joystickDeltaY * _playerSpeed;
+      deltaY = _joystickDeltaY * _playerSpeed;
       
       if (_joystickDeltaY.abs() > _joystickDeltaX.abs()) {
         newVerticalDirection = _joystickDeltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
@@ -366,12 +366,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowUp) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyW)) {
-        deltaY += _playerSpeed;
+        deltaY -= _playerSpeed;
         newVerticalDirection = PlayerDirection.up;
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowDown) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyS)) {
-        deltaY -= _playerSpeed;
+        deltaY += _playerSpeed;
         newVerticalDirection = PlayerDirection.down;
       }
     }
@@ -381,7 +381,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       deltaX = (deltaX / length) * _playerSpeed;
       deltaY = (deltaY / length) * _playerSpeed;
       if (newVerticalDirection == null) {
-        newVerticalDirection = deltaY > 0 ? PlayerDirection.up : PlayerDirection.down;
+        newVerticalDirection = deltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
       }
     }
     
@@ -987,7 +987,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                                   });
                                 },
                                 onHover: (hovering) {
-                                  setState(() {}); // Trigger rebuild for hover effect
+                                  setState(() {});
                                 },
                                 borderRadius: BorderRadius.circular(8),
                                 hoverColor: Colors.grey.shade200,
@@ -1215,7 +1215,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         Expanded(
           child: ListView(
             children: [
-              // Movement Speed Control
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1244,7 +1243,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         TextButton(
                           onPressed: () {
                             setState(() {
-                              _playerSpeed = 2.5; // Reset to default
+                              _playerSpeed = 2.5;
                             });
                           },
                           child: const Text('Reset'),
@@ -1252,7 +1251,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         TextButton(
                           onPressed: () {
                             setState(() {
-                              _playerSpeed = 5.0; // Fast
+                              _playerSpeed = 5.0;
                             });
                           },
                           child: const Text('Fast'),
@@ -1260,7 +1259,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         TextButton(
                           onPressed: () {
                             setState(() {
-                              _playerSpeed = 10.0; // Very Fast
+                              _playerSpeed = 10.0;
                             });
                           },
                           child: const Text('Very Fast'),
@@ -1271,7 +1270,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
               const Divider(),
-              // Teleport Section
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1323,10 +1321,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                               setState(() {
                                 _playerX = x.clamp(_worldMinX, _worldMaxX);
                                 _playerY = y.clamp(_worldMinY, _worldMaxY);
-                                // Update last sent position to prevent unnecessary network updates
                                 _lastSentX = _playerX;
                                 _lastSentY = _playerY;
-                                // Send teleport to server
                                 if (_currentCharacterId != null) {
                                   _gameService.movePlayer(_playerX, _playerY);
                                 }
@@ -1395,7 +1391,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         Expanded(
           child: ListView(
             children: [
-              // Joystick mode selection
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.gamepad, size: 20),
@@ -1425,7 +1420,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     if (value != null) {
                       setState(() {
                         _joystickMode = value;
-                        // Reset floating joystick state when switching modes
                         _showFloatingJoystick = false;
                         _floatingJoystickPosition = null;
                         _joystickDeltaX = 0;
@@ -1443,7 +1437,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   Widget _buildCharacterCreateModal() {
-    // Initialize controllers only once when modal is first shown
     _characterNameController ??= TextEditingController();
     _characterNameFocusNode ??= FocusNode();
 
@@ -1505,7 +1498,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     ),
                     style: const TextStyle(fontSize: 12),
                     onTap: () {
-                      // Ensure focus on tap for mobile
                       _characterNameFocusNode?.requestFocus();
                     },
                   ),
@@ -1613,7 +1605,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                             _selectedSpriteTypeForCreation,
                           );
                           await _refreshCharacters();
-                          // Auto-load the newly created character
                           if (mounted) {
                             await _loadCharacter({
                               'id': newCharacter['id'],
@@ -1642,8 +1633,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   Future<void> _loadCharacter(Map<String, dynamic> character) async {
-    // Close modals when loading a character
-    // Clear the text field when loading a character
     _characterNameController?.clear();
     setState(() {
       _showSettingsModal = false;
@@ -1651,17 +1640,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _settingsView = null;
       _selectedCharacter = null;
       
-      // Update current character state
       _currentCharacterId = character['id'] as String;
       _currentCharacterName = character['name'] as String;
       _currentSpriteType = character['spriteType'] as String? ?? 'char-1';
     });
 
-    // Join game with the new character
     if (_gameService.socket?.connected == true) {
       _joinGameWithCharacter();
     } else {
-      // Wait for connection
       _gameService.socket?.on('connect', (_) {
         _joinGameWithCharacter();
       });
@@ -1678,12 +1664,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         });
       }
     } catch (e) {
-      // Silently fail - preserve existing characters
       print('Failed to refresh characters: $e');
     }
   }
 
-  // Store callback references so we can remove them on dispose
   Function(Map<String, dynamic>) _playerJoinedCallback = (_) {};
   Function(Map<String, dynamic>) _playerMovedCallback = (_) {};
   Function(Map<String, dynamic>) _playerLeftCallback = (_) {};
@@ -1696,7 +1680,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _characterNameFocusNode?.dispose();
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
-    // Remove only this screen's callbacks, don't clear all
     _gameService.removeCallback(
       onPlayerJoined: _playerJoinedCallback,
       onPlayerMoved: _playerMovedCallback,
@@ -1709,8 +1692,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
 class GameWorldPainter extends CustomPainter {
   final Map<String, Player> players;
-  final double playerX; // Game X coordinate
-  final double playerY; // Game Y coordinate
+  final double playerX;
+  final double playerY;
   final String currentPlayerId;
   final String currentPlayerName;
   final PlayerDirection currentPlayerDirection;
@@ -1722,7 +1705,6 @@ class GameWorldPainter extends CustomPainter {
   final double Function(double) worldToScreenY;
   final double playerSize;
   
-  // World bounds (center at 0,0, extends -5000 to 5000)
   static const double _worldMinX = -5000.0;
   static const double _worldMaxX = 5000.0;
   static const double _worldMinY = -5000.0;
@@ -1778,12 +1760,11 @@ class GameWorldPainter extends CustomPainter {
     } else if (spriteType == 'char-2') {
       return char2Sprite;
     }
-    return char1Sprite; // Default fallback
+    return char1Sprite;
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Always draw black background first (for areas outside world bounds)
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
       Paint()..color = Colors.black,
