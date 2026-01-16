@@ -117,6 +117,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   String? _currentCharacterId; // Track current character ID (can be different from widget.characterId)
   String? _currentCharacterName;
   String? _currentSpriteType;
+  // Character creation modal state (persistent across rebuilds)
+  TextEditingController? _characterNameController;
+  FocusNode? _characterNameFocusNode;
+  String _selectedSpriteTypeForCreation = 'char-1';
 
   @override
   void initState() {
@@ -1535,13 +1539,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   Widget _buildCharacterCreateModal() {
-    final nameController = TextEditingController();
-    String selectedSpriteType = 'char-1';
+    // Initialize controllers only once when modal is first shown
+    _characterNameController ??= TextEditingController();
+    _characterNameFocusNode ??= FocusNode();
 
     return Center(
       child: StatefulBuilder(
         builder: (context, setModalState) {
-          final focusNode = FocusNode();
           return Container(
             width: 300,
             height: 400,
@@ -1585,11 +1589,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: TextField(
-                    focusNode: focusNode,
+                    focusNode: _characterNameFocusNode,
                     keyboardType: TextInputType.text,
                     textInputAction: TextInputAction.done,
                     autofocus: false,
-                    controller: nameController,
+                    controller: _characterNameController,
                     decoration: const InputDecoration(
                       labelText: 'Name',
                       isDense: true,
@@ -1598,7 +1602,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     style: const TextStyle(fontSize: 12),
                     onTap: () {
                       // Ensure focus on tap for mobile
-                      focusNode.requestFocus();
+                      _characterNameFocusNode?.requestFocus();
                     },
                   ),
                 ),
@@ -1610,7 +1614,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                       GestureDetector(
                         onTap: () {
                           setModalState(() {
-                            selectedSpriteType = 'char-1';
+                            _selectedSpriteTypeForCreation = 'char-1';
                           });
                         },
                         child: Container(
@@ -1618,8 +1622,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                           height: 50,
                           decoration: BoxDecoration(
                             border: Border.all(
-                              color: selectedSpriteType == 'char-1' ? Colors.blue : Colors.grey,
-                              width: selectedSpriteType == 'char-1' ? 2 : 1,
+                              color: _selectedSpriteTypeForCreation == 'char-1' ? Colors.blue : Colors.grey,
+                              width: _selectedSpriteTypeForCreation == 'char-1' ? 2 : 1,
                             ),
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -1650,7 +1654,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                       GestureDetector(
                         onTap: () {
                           setModalState(() {
-                            selectedSpriteType = 'char-2';
+                            _selectedSpriteTypeForCreation = 'char-2';
                           });
                         },
                         child: Container(
@@ -1658,8 +1662,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                           height: 50,
                           decoration: BoxDecoration(
                             border: Border.all(
-                              color: selectedSpriteType == 'char-2' ? Colors.blue : Colors.grey,
-                              width: selectedSpriteType == 'char-2' ? 2 : 1,
+                              color: _selectedSpriteTypeForCreation == 'char-2' ? Colors.blue : Colors.grey,
+                              width: _selectedSpriteTypeForCreation == 'char-2' ? 2 : 1,
                             ),
                             borderRadius: BorderRadius.circular(4),
                           ),
@@ -1696,13 +1700,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: () async {
-                        if (nameController.text.isEmpty || _accountId == null) return;
+                        if (_characterNameController == null || _characterNameController!.text.isEmpty || _accountId == null) return;
                         
                         try {
                           final newCharacter = await _apiService.createCharacter(
                             _accountId!,
-                            nameController.text,
-                            selectedSpriteType,
+                            _characterNameController!.text,
+                            _selectedSpriteTypeForCreation,
                           );
                           await _refreshCharacters();
                           // Auto-load the newly created character
@@ -1735,6 +1739,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   Future<void> _loadCharacter(Map<String, dynamic> character) async {
     // Close modals when loading a character
+    // Clear the text field when loading a character
+    _characterNameController?.clear();
     setState(() {
       _showSettingsModal = false;
       _showCharacterCreateModal = false;
@@ -1782,6 +1788,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   @override
   void dispose() {
     _keyboardFocusNode.dispose();
+    _characterNameController?.dispose();
+    _characterNameFocusNode?.dispose();
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
     // Remove only this screen's callbacks, don't clear all
