@@ -541,7 +541,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          'Pos: (${_playerX.toInt()}, ${_playerY.toInt()})',
+                          'Pos: (${_playerX.toInt()}, ${(-_playerY).toInt()})',
                           style: const TextStyle(color: Colors.white70, fontSize: 10),
                         ),
                       ),
@@ -1184,7 +1184,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   Widget _buildDevToolsContent() {
     final teleportXController = TextEditingController(text: _playerX.toInt().toString());
-    final teleportYController = TextEditingController(text: _playerY.toInt().toString());
+    final teleportYController = TextEditingController(text: (-_playerY).toInt().toString());
     
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1320,7 +1320,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                             if (x != null && y != null) {
                               setState(() {
                                 _playerX = x.clamp(_worldMinX, _worldMaxX);
-                                _playerY = y.clamp(_worldMinY, _worldMaxY);
+                                _playerY = (-y).clamp(_worldMinY, _worldMaxY);
                                 _lastSentX = _playerX;
                                 _lastSentY = _playerY;
                                 if (_currentCharacterId != null) {
@@ -1335,7 +1335,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                           onPressed: () {
                             setState(() {
                               teleportXController.text = _playerX.toInt().toString();
-                              teleportYController.text = _playerY.toInt().toString();
+                              teleportYController.text = (-_playerY).toInt().toString();
                             });
                           },
                           child: const Text('Current'),
