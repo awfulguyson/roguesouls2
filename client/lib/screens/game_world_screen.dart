@@ -36,6 +36,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   final Map<String, Player> _players = {};
   final Map<String, Offset> _playerTargetPositions = {};
   final Map<String, DateTime> _playerLastUpdateTime = {};
+  int _repaintCounter = 0;
   double _playerX = 0.0;
   double _playerY = 0.0;
   double _playerSpeed = 2.5;
@@ -333,6 +334,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             // Remove from interpolation since we're already at target
             _playerTargetPositions.remove(playerId);
           }
+          _repaintCounter++;
         });
       } else {
         setState(() {
@@ -469,7 +471,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     
     // Always call setState if there are active targets to ensure repaints
     if (needsUpdate && mounted) {
-      setState(() {});
+      setState(() {
+        _repaintCounter++;
+      });
     }
   }
 
@@ -516,6 +520,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _worldToScreenX,
                   _worldToScreenY,
                   _playerSize,
+                  _repaintCounter,
                 ),
                 size: Size.infinite,
               ),
@@ -1729,6 +1734,7 @@ class GameWorldPainter extends CustomPainter {
   final double Function(double) worldToScreenX;
   final double Function(double) worldToScreenY;
   final double playerSize;
+  final int repaintCounter;
   
   static const double _worldMinX = -5000.0;
   static const double _worldMaxX = 5000.0;
@@ -1749,6 +1755,7 @@ class GameWorldPainter extends CustomPainter {
     this.worldToScreenX,
     this.worldToScreenY,
     this.playerSize,
+    this.repaintCounter,
   );
 
   void _drawSprite(
@@ -1924,6 +1931,11 @@ class GameWorldPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(GameWorldPainter oldDelegate) {
+    // Always repaint if repaint counter changed (indicates player movement updates)
+    if (oldDelegate.repaintCounter != repaintCounter) {
+      return true;
+    }
+    
     if (oldDelegate.players.length != players.length) {
       return true;
     }
