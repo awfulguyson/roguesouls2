@@ -1,5 +1,7 @@
 # RogueSouls - 2D MMORPG Roguelike
 
+This is the first version that works with mvp of load, movement, multiplayer.
+
 A web-based multiplayer roguelike game built with Flutter and Node.js.
 
 ## Project Structure
