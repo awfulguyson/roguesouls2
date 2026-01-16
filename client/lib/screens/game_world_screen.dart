@@ -15,7 +15,7 @@ class GameWorldScreen extends StatefulWidget {
   final String? characterName;
   final String? spriteType;
   final bool isTemporary;
-  final String? accountId; // Pass accountId to preserve it
+  final String? accountId;
 
   const GameWorldScreen({
     super.key,
@@ -34,22 +34,17 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   final GameService _gameService = GameService();
   final ApiService _apiService = ApiService();
   final Map<String, Player> _players = {};
-  // Interpolation targets for smooth movement
   final Map<String, Offset> _playerTargetPositions = {};
   final Map<String, DateTime> _playerLastUpdateTime = {};
-  // Game world coordinates: world is 10000x10000, origin at (0, 0) in center
-  // World bounds: -5000 to 5000 (top-right is 5000,5000, bottom-left is -5000,-5000)
-  // Player position in world coordinates
-  double _playerX = 0.0; // Start at center of world
-  double _playerY = 0.0; // Start at center of world
-  double _playerSpeed = 2.5; // Base speed (can be modified by dev tools)
-  double _playerSize = 128.0; // Player sprite size (will scale with screen)
+  double _playerX = 0.0;
+  double _playerY = 0.0;
+  double _playerSpeed = 2.5;
+  double _playerSize = 128.0;
   Timer? _positionUpdateTimer;
   Timer? _movementTimer;
   double _lastSentX = 0.0;
   double _lastSentY = 0.0;
   
-  // World dimensions (total size, bounds are -halfSize to +halfSize)
   static const double _worldWidth = 10000.0;
   static const double _worldHeight = 10000.0;
   static const double _worldMinX = -5000.0;
@@ -57,74 +52,52 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   static const double _worldMinY = -5000.0;
   static const double _worldMaxY = 5000.0;
   
-  // Screen dimensions (playable area) - will be set from MediaQuery
   double _screenWidth = 800.0;
   double _screenHeight = 600.0;
   
-  // Joystick state for mobile
   double _joystickDeltaX = 0.0;
   double _joystickDeltaY = 0.0;
   
-  // Check if mobile device (using screen size and aspect ratio)
   bool _isMobileDevice(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final size = mediaQuery.size;
     
-    // Mobile devices typically have:
-    // 1. Smaller screens (width OR height < 768px)
-    // 2. Higher pixel density (devicePixelRatio > 1.5 for most mobile)
-    // 3. Aspect ratio closer to phone/tablet (not ultra-wide desktop)
-    
-    // Very lenient: consider mobile if screen is small OR has high pixel density
-    // This will show joystick on most mobile devices
     final isSmallScreen = size.width < 768 || size.height < 768;
     final hasHighDensity = mediaQuery.devicePixelRatio > 1.5;
     final aspectRatio = size.width / size.height;
-    final isPhoneAspectRatio = aspectRatio > 0.4 && aspectRatio < 3.0; // Very wide range
+    final isPhoneAspectRatio = aspectRatio > 0.4 && aspectRatio < 3.0;
     
-    // Consider it mobile if:
-    // - Small screen with reasonable aspect ratio (most mobile devices)
-    // - OR high pixel density with reasonable aspect ratio (mobile devices)
-    // - OR very small screen (definitely mobile)
-    // Only exclude if it's a large screen with low pixel density (desktop)
-    if (size.width < 400 || size.height < 400) return true; // Very small = mobile
-    if (size.width >= 1200 && size.height >= 800 && !hasHighDensity) return false; // Large desktop
+    if (size.width < 400 || size.height < 400) return true;
+    if (size.width >= 1200 && size.height >= 800 && !hasHighDensity) return false;
     return (isSmallScreen && isPhoneAspectRatio) || (hasHighDensity && isPhoneAspectRatio);
   }
   
-  // Convert world coordinates to screen coordinates (camera system - player always centered)
-  // Camera follows player, so player position is the camera position
-  // World: Y increases as you go UP (toward 5000), Y decreases as you go DOWN (toward -5000)
-  // Screen: Y increases as you go DOWN, Y decreases as you go UP
-  // So when world Y increases, screen Y should DECREASE (invert the Y axis)
   double _worldToScreenX(double worldX) => worldX - _playerX + _screenWidth / 2;
-  double _worldToScreenY(double worldY) => _playerY - worldY + _screenHeight / 2;
+  double _worldToScreenY(double worldY) => worldY - _playerY + _screenHeight / 2;
   
-  // Convert screen coordinates to world coordinates
   double _screenToWorldX(double screenX) => screenX - _screenWidth / 2 + _playerX;
   double _screenToWorldY(double screenY) => screenY - _screenHeight / 2 + _playerY;
   final Set<LogicalKeyboardKey> _pressedKeys = {};
   PlayerDirection _playerDirection = PlayerDirection.down;
-  PlayerDirection _lastVerticalDirection = PlayerDirection.down; // Track last up/down for left/right movement
+  PlayerDirection _lastVerticalDirection = PlayerDirection.down;
   ui.Image? _char1Sprite;
   ui.Image? _char2Sprite;
   ui.Image? _worldBackground;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
-  String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view, 'howToPlay' = how to play, 'devTools' = dev tools
-  String _joystickMode = 'fixed-right'; // 'fixed-left', 'fixed-right', 'floating-left', 'floating-right'
-  Offset? _floatingJoystickPosition; // Position for floating joystick
-  bool _showFloatingJoystick = false; // Whether floating joystick is visible
-  bool _showDevTools = false; // Whether dev tools panel is visible
-  Map<String, dynamic>? _selectedCharacter; // Selected character in character select screen
+  String? _settingsView;
+  String _joystickMode = 'fixed-right';
+  Offset? _floatingJoystickPosition;
+  bool _showFloatingJoystick = false;
+  bool _showDevTools = false;
+  Map<String, dynamic>? _selectedCharacter;
   String? _accountId;
   List<dynamic> _characters = [];
   bool _isInitialized = false;
-  final FocusNode _keyboardFocusNode = FocusNode(); // Persistent focus node for keyboard input
-  String? _currentCharacterId; // Track current character ID (can be different from widget.characterId)
+  final FocusNode _keyboardFocusNode = FocusNode();
+  String? _currentCharacterId;
   String? _currentCharacterName;
   String? _currentSpriteType;
-  // Character creation modal state (persistent across rebuilds)
   TextEditingController? _characterNameController;
   FocusNode? _characterNameFocusNode;
   String _selectedSpriteTypeForCreation = 'char-1';
@@ -132,25 +105,19 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize current character from widget
     _currentCharacterId = widget.characterId;
     _currentCharacterName = widget.characterName;
     _currentSpriteType = widget.spriteType;
     
     _loadSprites();
-    // Set up callbacks BEFORE connecting to ensure we receive all events
     _setupGameService();
     _gameService.connect();
     _initializeAccount();
     
-    // Connect to server to see other players (even without character)
-    // Request player list when connected (callbacks are already set up)
     _gameService.socket?.on('connect', (_) {
       print('Socket connected, requesting player list...');
-      // Request current players list
       _gameService.socket?.emit('game:requestPlayers');
       
-      // Join game if character is loaded
       if (_currentCharacterId != null) {
         Future.delayed(const Duration(milliseconds: 500), () {
           _joinGameWithCharacter();
@@ -158,13 +125,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     });
     
-    // Handle reconnection - rejoin game if we have a character
     _gameService.socket?.on('reconnect', (_) {
       print('Socket reconnected, rejoining game...');
-      // Request fresh player list
       _gameService.socket?.emit('game:requestPlayers');
       
-      // Rejoin game if character is loaded
       if (_currentCharacterId != null) {
         Future.delayed(const Duration(milliseconds: 500), () {
           _joinGameWithCharacter();
@@ -172,41 +136,34 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     });
     
-    // Also try after a delay in case already connected
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (_currentCharacterId != null && _gameService.socket?.connected == true) {
         _joinGameWithCharacter();
       }
     });
     
-    // Always start game loop: check pressed keys and move player continuously (60 FPS)
-    // This allows interpolation of other players even without a character
     _movementTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       _updateMovement();
       _interpolateOtherPlayers();
     });
     
-    // Always start position update timer (only sends if we have a character)
     _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
       if (_currentCharacterId == null) return;
       final dx = (_playerX - _lastSentX).abs();
       final dy = (_playerY - _lastSentY).abs();
       
-      // Send if moved more than 0.5 pixels (more frequent updates)
       if (dx > 0.5 || dy > 0.5) {
-        // Send game world coordinates directly (not screen coordinates)
         _gameService.movePlayer(_playerX, _playerY);
         _lastSentX = _playerX;
         _lastSentY = _playerY;
       }
     });
     
-    // Show settings modal if no character loaded
     if (_currentCharacterId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         setState(() {
           _showSettingsModal = true;
-          _settingsView = null; // Show main settings menu
+          _settingsView = null;
         });
         _refreshCharacters();
       });
@@ -216,7 +173,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   void _joinGameWithCharacter() {
     if (_currentCharacterId == null || _currentCharacterName == null) return;
     print('Joining game with character: $_currentCharacterId');
-    // Send game world coordinates directly (not screen coordinates)
     _gameService.joinGame(
       _currentCharacterId!,
       _currentCharacterName!,
@@ -230,7 +186,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   Future<void> _initializeAccount() async {
     try {
-      // If accountId is provided from widget, use it instead of creating new one
       if (widget.accountId != null) {
         final accountId = widget.accountId!;
         final characters = await _apiService.getCharacters(accountId);
@@ -242,7 +197,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           });
         }
       } else {
-        // Create new temporary account only if none provided
         final account = await _apiService.createTemporaryAccount();
         final accountId = account['id'] as String;
         final characters = await _apiService.getCharacters(accountId);
@@ -275,13 +229,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     final char2Frame = await char2Codec.getNextFrame();
     _char2Sprite = char2Frame.image;
 
-    // Load world background image
-    // Note: When you update world-img.jpg:
-    // 1. Save the new image file
-    // 2. Run: flutter clean && flutter build web
-    // 3. Deploy: firebase deploy --only hosting
-    // 4. Users should hard refresh (Ctrl+Shift+R) to see the new image
-    // Flutter automatically generates hash-based filenames, so the new image will have a different URL
     try {
       final worldBytes = await rootBundle.load('assets/world-img.jpg');
       final worldCodec = await ui.instantiateImageCodec(worldBytes.buffer.asUint8List());
@@ -311,8 +258,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           print('Processing player: $playerData');
           final player = Player.fromJson(playerData as Map<String, dynamic>);
           print('Parsed player: id=${player.id}, name=${player.name}, x=${player.x}, y=${player.y}');
-          // Positions from server are already in game world coordinates
-          // Only skip if this is our own character (when we have one)
           if (_currentCharacterId == null || player.id != _currentCharacterId) {
             print('Adding player to map: ${player.id}');
             _players[player.id] = player;
@@ -334,8 +279,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       setState(() {
         final player = Player.fromJson(data);
         print('Parsed joined player: id=${player.id}, name=${player.name}');
-        // Positions from server are already in game world coordinates
-        // Only skip if this is our own character (when we have one)
         if (_currentCharacterId == null || player.id != _currentCharacterId) {
           print('Adding joined player to map: ${player.id}');
           _players[player.id] = player;
@@ -350,38 +293,30 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _playerMovedCallback = (data) {
       if (!mounted) return;
       final playerId = data['id'] as String;
-      // Skip our own movement updates (we handle our own position locally)
       if (_currentCharacterId != null && playerId == _currentCharacterId) {
         return;
       }
       
-      // Positions from server are already in game world coordinates
       final newX = (data['x'] as num).toDouble();
       final newY = (data['y'] as num).toDouble();
       
-      // Always update state to trigger repaint, even if player already exists
       if (_players.containsKey(playerId)) {
         final oldX = _players[playerId]!.x;
         final oldY = _players[playerId]!.y;
         
-        // Store target position for interpolation (don't update immediately)
         _playerTargetPositions[playerId] = Offset(newX, newY);
         _playerLastUpdateTime[playerId] = DateTime.now();
         
-        // Infer direction from movement
         final dx = newX - oldX;
         final dy = newY - oldY;
         if (dy != 0) {
-          // Vertical movement - update direction (in game coords, +y is up)
           _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
         }
         
-        // Trigger repaint for interpolation to work
         if (mounted) {
           setState(() {});
         }
       } else {
-        // Player moved but not in our list - add them (might be a late join)
         setState(() {
           final player = Player.fromJson(data);
           player.x = newX;
@@ -402,37 +337,25 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   void _updateMovement() {
-    if (_currentCharacterId == null) return; // Don't allow movement without character
+    if (_currentCharacterId == null) return;
     
     double deltaX = 0;
     double deltaY = 0;
     PlayerDirection? newVerticalDirection;
     
-    // Check if joystick is being used (has input)
     final isUsingJoystick = _joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1;
     
     if (isUsingJoystick) {
-      // Mobile: use joystick input
       deltaX = _joystickDeltaX * _playerSpeed;
-      // Joystick: negative Y (up on screen) should increase world Y (move up toward 5000)
-      // Joystick: positive Y (down on screen) should decrease world Y (move down toward -5000)
       deltaY = -_joystickDeltaY * _playerSpeed;
       
-      // Determine direction based on joystick input
-      // Joystick: negative Y is up (toward top of screen), positive Y is down
-      // World: up increases Y, down decreases Y
       if (_joystickDeltaY.abs() > _joystickDeltaX.abs()) {
-        // Vertical movement dominates
         newVerticalDirection = _joystickDeltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
       } else if (_joystickDeltaX != 0) {
-        // Horizontal movement - use last vertical direction
-        // Direction already set to last vertical direction
       }
     } else {
-      // Desktop: use keyboard input (always check keyboard, even if no keys pressed yet)
       if (_pressedKeys.isEmpty) return;
       
-      // Check which keys are pressed and calculate movement
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowLeft) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyA)) {
         deltaX -= _playerSpeed;
@@ -443,51 +366,43 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowUp) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyW)) {
-        deltaY += _playerSpeed; // Up increases Y (player moves up in world, Y increases toward 5000)
+        deltaY += _playerSpeed;
         newVerticalDirection = PlayerDirection.up;
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowDown) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyS)) {
-        deltaY -= _playerSpeed; // Down decreases Y (player moves down in world, Y decreases toward -5000)
+        deltaY -= _playerSpeed;
         newVerticalDirection = PlayerDirection.down;
       }
     }
     
-      // Normalize diagonal movement (so diagonal speed equals horizontal/vertical speed)
-      if (deltaX != 0 && deltaY != 0) {
-        final length = sqrt(deltaX * deltaX + deltaY * deltaY);
-        deltaX = (deltaX / length) * _playerSpeed;
-        deltaY = (deltaY / length) * _playerSpeed;
-        // For diagonal, use the vertical direction for sprite
-        // deltaY > 0 means Y increasing (moving up toward 5000), deltaY < 0 means Y decreasing (moving down toward -5000)
-        if (newVerticalDirection == null) {
-          newVerticalDirection = deltaY > 0 ? PlayerDirection.up : PlayerDirection.down;
-        }
+    if (deltaX != 0 && deltaY != 0) {
+      final length = sqrt(deltaX * deltaX + deltaY * deltaY);
+      deltaX = (deltaX / length) * _playerSpeed;
+      deltaY = (deltaY / length) * _playerSpeed;
+      if (newVerticalDirection == null) {
+        newVerticalDirection = deltaY > 0 ? PlayerDirection.up : PlayerDirection.down;
       }
+    }
     
     if (deltaX != 0 || deltaY != 0) {
       setState(() {
         _playerX += deltaX;
         _playerY += deltaY;
         
-        // Update direction: use new vertical direction if provided, otherwise keep last vertical direction
         if (newVerticalDirection != null) {
           _lastVerticalDirection = newVerticalDirection;
           _playerDirection = newVerticalDirection;
         } else if (deltaX != 0 && deltaY == 0) {
-          // Pure horizontal movement - use last vertical direction
           _playerDirection = _lastVerticalDirection;
         }
         
-        // Keep player in world bounds (world is -5000 to 5000)
-        // Allow player to go to exact edges
         _playerX = _playerX.clamp(_worldMinX, _worldMaxX);
         _playerY = _playerY.clamp(_worldMinY, _worldMaxY);
       });
     }
   }
 
-  // Interpolate other players' positions smoothly
   void _interpolateOtherPlayers() {
     final now = DateTime.now();
     bool needsUpdate = false;
@@ -502,7 +417,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       final currentPos = Offset(player.x, player.y);
       final distance = (targetPos - currentPos).distance;
       
-      // If very close, snap to target
       if (distance < 0.5) {
         if ((player.x - targetPos.dx).abs() > 0.1 || (player.y - targetPos.dy).abs() > 0.1) {
           player.x = targetPos.dx;
@@ -510,20 +424,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           needsUpdate = true;
         }
       } else {
-        // Interpolate towards target (lerp factor based on distance and time)
         final lastUpdate = _playerLastUpdateTime[playerId];
         final timeSinceUpdate = lastUpdate != null 
             ? now.difference(lastUpdate).inMilliseconds 
             : 50;
         
-        // Use a lerp factor that adapts to update frequency
-        // Faster interpolation for larger distances, slower for small
         final lerpFactor = (distance > 10) ? 0.3 : 0.15;
         
         final newX = currentPos.dx + (targetPos.dx - currentPos.dx) * lerpFactor;
         final newY = currentPos.dy + (targetPos.dy - currentPos.dy) * lerpFactor;
         
-        // Only update if position actually changed
         if ((player.x - newX).abs() > 0.01 || (player.y - newY).abs() > 0.01) {
           player.x = newX;
           player.y = newY;
@@ -532,7 +442,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     }
     
-    // Only call setState if something actually changed
     if (needsUpdate && mounted) {
       setState(() {});
     }
@@ -540,20 +449,17 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Get screen dimensions and update game world size
     final mediaQuery = MediaQuery.of(context);
     _screenWidth = mediaQuery.size.width;
     _screenHeight = mediaQuery.size.height;
     
-    // Keep player size constant (not scaled with screen)
-    _playerSize = 128.0; // Fixed size regardless of screen dimensions
+    _playerSize = 128.0;
     
     final isMobile = _isMobileDevice(context);
     
     Widget gameContent = Scaffold(
         body: Stack(
           children: [
-            // Gesture detector for closing modals when tapping outside
             if (_showSettingsModal || _showCharacterCreateModal)
               Positioned.fill(
                 child: GestureDetector(
@@ -567,11 +473,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   child: Container(color: Colors.transparent),
                 ),
               ),
-            // Game world background
             Container(
-              color: const Color(0xFF222222), // Dark grey background
+              color: const Color(0xFF222222),
               child: CustomPaint(
-                key: ValueKey('game_${_players.length}_${_worldBackground != null ? "bg" : "nobg"}'), // Force repaint on player changes or background load
+                key: ValueKey('game_${_players.length}_${_worldBackground != null ? "bg" : "nobg"}'),
                 painter: GameWorldPainter(
                   _players,
                   _playerX,
@@ -585,12 +490,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _worldBackground,
                   _worldToScreenX,
                   _worldToScreenY,
-                  _playerSize, // Pass player size to painter
+                  _playerSize,
                 ),
                 size: Size.infinite,
               ),
             ),
-            // Menu button (top left)
             Positioned(
               top: 16,
               left: 16,
@@ -612,10 +516,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 tooltip: 'Menu',
               ),
             ),
-            // Settings modal (centered)
             if (_showSettingsModal)
               _buildSettingsModal(),
-            // Players count and debug info (moved to top right)
             Positioned(
               top: 16,
               right: 16,
@@ -647,16 +549,15 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
             ),
-            // Virtual joystick (always visible for debugging)
             if (_currentCharacterId != null)
               _joystickMode.startsWith('floating')
                   ? _buildFloatingJoystick()
                   : Positioned(
-                      bottom: max(20.0, _screenHeight * 0.05), // At least 20px or 5% of screen height
-                      left: _joystickMode == 'fixed-left' ? max(20.0, _screenWidth * 0.05) : null, // Left side
-                      right: _joystickMode == 'fixed-right' ? max(20.0, _screenWidth * 0.05) : null, // Right side
+                      bottom: max(20.0, _screenHeight * 0.05),
+                      left: _joystickMode == 'fixed-left' ? max(20.0, _screenWidth * 0.05) : null,
+                      right: _joystickMode == 'fixed-right' ? max(20.0, _screenWidth * 0.05) : null,
                       child: VirtualJoystick(
-                        size: min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble(), // 20% of smaller dimension, max 150px
+                        size: min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble(),
                         onMove: (deltaX, deltaY) {
                           setState(() {
                             _joystickDeltaX = deltaX;
@@ -665,16 +566,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         },
                       ),
                     ),
-            // Character creation modal (standalone, only when not in settings)
             if (_showCharacterCreateModal && !_showSettingsModal)
               _buildCharacterCreateModal(),
             ],
           ),
         );
     
-    // Always wrap with KeyboardListener for desktop input
-    // On mobile, joystick input takes precedence in _updateMovement
-    // Request focus after build to ensure keyboard input works
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_keyboardFocusNode.hasFocus) {
         _keyboardFocusNode.requestFocus();
@@ -686,7 +583,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       onKeyEvent: (event) {
         final key = event.logicalKey;
         
-        // Track key presses/releases for continuous movement
         if (event is KeyDownEvent) {
           if (key == LogicalKeyboardKey.arrowLeft ||
               key == LogicalKeyboardKey.keyA ||
@@ -709,21 +605,17 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   Widget _buildFloatingJoystick() {
     final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble();
     
-    // Only show touch detector when modals are NOT open (menus take priority)
     final modalsOpen = _showSettingsModal || _showCharacterCreateModal;
     
-    // Determine which quadrant to use (bottom-left or bottom-right)
     final isFloatingLeft = _joystickMode == 'floating-left';
     final isFloatingRight = _joystickMode == 'floating-right';
     
-    // Calculate quadrant boundaries (bottom half of screen, left or right half)
     final quadrantWidth = _screenWidth / 2;
     final quadrantHeight = _screenHeight / 2;
-    final quadrantTop = _screenHeight / 2; // Start at middle of screen (bottom half)
+    final quadrantTop = _screenHeight / 2;
     final quadrantLeft = isFloatingLeft ? 0.0 : (_screenWidth / 2);
     final quadrantRight = isFloatingRight ? _screenWidth : (_screenWidth / 2);
     
-    // Helper to check if a position is in the active quadrant
     bool isInActiveQuadrant(Offset position) {
       if (modalsOpen) return false;
       final x = position.dx;
@@ -735,7 +627,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     
     return Stack(
       children: [
-        // Touch detector only for the active quadrant (only active when modals are closed)
         if (!modalsOpen)
           Positioned(
             left: quadrantLeft,
@@ -747,7 +638,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 final localPosition = details.localPosition;
                 final globalPosition = Offset(quadrantLeft + localPosition.dx, quadrantTop + localPosition.dy);
                 
-                // Only activate if touch is in the active quadrant
                 if (isInActiveQuadrant(globalPosition)) {
                   setState(() {
                     _floatingJoystickPosition = globalPosition;
@@ -760,9 +650,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   final localPosition = details.localPosition;
                   final globalPosition = Offset(quadrantLeft + localPosition.dx, quadrantTop + localPosition.dy);
                   
-                  // Only process if still in active quadrant
                   if (isInActiveQuadrant(globalPosition)) {
-                    // Calculate movement relative to joystick center
                     final center = _floatingJoystickPosition!;
                     final delta = globalPosition - center;
                     final maxDistance = (joystickSize / 2) - 30;
@@ -804,7 +692,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
               child: Container(color: Colors.transparent),
             ),
           ),
-        // Visible joystick at touch position (only when active and modals are closed)
         if (_showFloatingJoystick && _floatingJoystickPosition != null && !modalsOpen)
           Positioned(
             left: _floatingJoystickPosition!.dx - joystickSize / 2,
@@ -815,13 +702,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     );
   }
 
-  // Build the visual representation of the floating joystick with stick position
   Widget _buildFloatingJoystickVisual(double size) {
     final baseRadius = 60.0;
     final stickRadius = 30.0;
     final maxDistance = baseRadius - stickRadius;
     
-    // Calculate stick position from current joystick deltas
     final stickOffset = Offset(
       _joystickDeltaX * maxDistance,
       _joystickDeltaY * maxDistance,
@@ -840,7 +725,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       ),
       child: Stack(
         children: [
-          // Base circle
           Center(
             child: Container(
               width: baseRadius * 2,
@@ -851,7 +735,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
               ),
             ),
           ),
-          // Stick (positioned based on joystick deltas)
           Center(
             child: Transform.translate(
               offset: stickOffset,
@@ -880,7 +763,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   Widget _buildSettingsModal() {
     return Center(
       child: GestureDetector(
-        onTap: () {}, // Prevent closing when tapping inside
+        onTap: () {},
         child: Container(
           width: 300,
           height: 400,
@@ -1869,26 +1752,18 @@ class GameWorldPainter extends CustomPainter {
     double size,
     PlayerDirection direction,
   ) {
-    // Determine source rect based on direction
-    // Down = top left 512x512 (0, 0, 512, 512)
-    // Up = top right 512x512 (512, 0, 512, 512)
-    // Left/right keep the last vertical direction (direction parameter already has this)
     Rect sourceRect;
     if (direction == PlayerDirection.down) {
       sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
     } else if (direction == PlayerDirection.up) {
       sourceRect = const Rect.fromLTWH(512, 0, 512, 512);
     } else {
-      // For left/right, direction should already be set to last vertical direction
-      // Default to down (top left) if somehow it's not up or down
       sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
     }
 
-    // Convert world coordinates to screen coordinates
     final screenX = worldToScreenX(worldX);
     final screenY = worldToScreenY(worldY);
     
-    // Center the sprite (x, y is the center of the sprite)
     final destRect = Rect.fromCenter(
       center: Offset(screenX, screenY),
       width: size,
@@ -1914,31 +1789,24 @@ class GameWorldPainter extends CustomPainter {
       Paint()..color = Colors.black,
     );
     
-    // Draw world background image
     if (worldBackground != null) {
-      // Calculate the visible world area (camera view)
       final worldStartX = playerX - size.width / 2;
       final worldStartY = playerY - size.height / 2;
       final worldEndX = playerX + size.width / 2;
       final worldEndY = playerY + size.height / 2;
       
-      // Calculate source rect from background image (scale to world size)
       final bgWidth = worldBackground!.width.toDouble();
       final bgHeight = worldBackground!.height.toDouble();
       const worldWidth = 10000.0;
       const worldHeight = 10000.0;
       
-      // Clamp world coordinates to valid range (-5000 to 5000)
       final clampedWorldStartX = worldStartX.clamp(_worldMinX, _worldMaxX);
       final clampedWorldStartY = worldStartY.clamp(_worldMinY, _worldMaxY);
       final clampedWorldEndX = worldEndX.clamp(_worldMinX, _worldMaxX);
       final clampedWorldEndY = worldEndY.clamp(_worldMinY, _worldMaxY);
       
-      // Calculate which part of the background image to show
-      // Convert world coordinates (-5000 to 5000) to image coordinates (0 to bgWidth/bgHeight)
-      // World -5000 maps to image 0, world 0 maps to image center, world 5000 maps to image end
-      final normalizedStartX = (clampedWorldStartX - _worldMinX) / worldWidth; // 0.0 to 1.0
-      final normalizedStartY = (clampedWorldStartY - _worldMinY) / worldHeight; // 0.0 to 1.0
+      final normalizedStartX = (clampedWorldStartX - _worldMinX) / worldWidth;
+      final normalizedStartY = (clampedWorldStartY - _worldMinY) / worldHeight;
       final normalizedEndX = (clampedWorldEndX - _worldMinX) / worldWidth;
       final normalizedEndY = (clampedWorldEndY - _worldMinY) / worldHeight;
       
@@ -1947,12 +1815,9 @@ class GameWorldPainter extends CustomPainter {
       final sourceWidth = (normalizedEndX - normalizedStartX) * bgWidth;
       final sourceHeight = (normalizedEndY - normalizedStartY) * bgHeight;
       
-      // Calculate screen position for the background
-      // If camera is outside world bounds, offset the destination to show black
       final screenOffsetX = clampedWorldStartX - worldStartX;
       final screenOffsetY = clampedWorldStartY - worldStartY;
       
-      // Clamp source rect to image bounds
       final clampedSourceX = sourceX.clamp(0.0, bgWidth);
       final clampedSourceY = sourceY.clamp(0.0, bgHeight);
       final clampedSourceWidth = (sourceWidth).clamp(0.0, bgWidth - clampedSourceX);
@@ -1965,12 +1830,8 @@ class GameWorldPainter extends CustomPainter {
         clampedSourceHeight,
       );
       
-      // Destination rect on screen
-      // screenOffsetX/Y can be negative if camera is outside world bounds
-      // In that case, we want to show black, so we offset the destination
       final destX = screenOffsetX > 0 ? screenOffsetX : 0.0;
       final destY = screenOffsetY > 0 ? screenOffsetY : 0.0;
-      // Adjust width/height if we're offset
       final destWidth = screenOffsetX > 0 ? clampedSourceWidth : (clampedSourceWidth + screenOffsetX);
       final destHeight = screenOffsetY > 0 ? clampedSourceHeight : (clampedSourceHeight + screenOffsetY);
       
@@ -1984,7 +1845,6 @@ class GameWorldPainter extends CustomPainter {
       canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
     }
     
-    // Draw other players (world coordinates)
     for (var player in players.values) {
       if (player.id != currentPlayerId) {
         final playerSpriteType = player.spriteType ?? 'char-2';
@@ -1993,7 +1853,6 @@ class GameWorldPainter extends CustomPainter {
         if (sprite != null) {
           _drawSprite(canvas, sprite, player.x, player.y, playerSize, player.direction);
         } else {
-          // Fallback to rectangle if sprite not loaded
           final screenX = worldToScreenX(player.x);
           final screenY = worldToScreenY(player.y);
           final paint = Paint()..color = Colors.blue;
@@ -2007,10 +1866,9 @@ class GameWorldPainter extends CustomPainter {
           );
         }
         
-        // Draw player name (centered above sprite)
         final screenX = worldToScreenX(player.x);
         final screenY = worldToScreenY(player.y);
-        final fontSize = playerSize * 0.1; // Scale font with player size
+        final fontSize = playerSize * 0.1;
         final textPainter = TextPainter(
           text: TextSpan(
             text: player.name,
@@ -2019,21 +1877,16 @@ class GameWorldPainter extends CustomPainter {
           textDirection: TextDirection.ltr,
         );
         textPainter.layout();
-        // Center the text above the sprite (sprite is centered, so text is centered above)
         final textX = screenX - textPainter.width / 2;
         textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
       }
     }
 
-    // Draw current player (on top) - always at screen center
-    // Only draw if character is loaded
     if (currentPlayerId.isNotEmpty && currentPlayerName.isNotEmpty) {
       final currentSprite = _getSpriteForType(currentPlayerSpriteType);
       if (currentSprite != null) {
-        // Current player is always at screen center (world position is playerX, playerY)
         _drawSprite(canvas, currentSprite, playerX, playerY, playerSize, currentPlayerDirection);
       } else {
-        // Fallback to rectangle if sprite not loaded
         final screenX = worldToScreenX(playerX);
         final screenY = worldToScreenY(playerY);
         final currentPlayerPaint = Paint()..color = Colors.red;
@@ -2047,10 +1900,9 @@ class GameWorldPainter extends CustomPainter {
         );
       }
       
-      // Draw current player name (centered above sprite)
       final screenX = worldToScreenX(playerX);
       final screenY = worldToScreenY(playerY);
-      final fontSize = playerSize * 0.1; // Scale font with player size
+      final fontSize = playerSize * 0.1;
       final textPainter = TextPainter(
         text: TextSpan(
           text: currentPlayerName,
@@ -2059,7 +1911,6 @@ class GameWorldPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
-      // Center the text above the sprite (sprite is centered, so text is centered above)
       final textX = screenX - textPainter.width / 2;
       textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
     }
@@ -2067,19 +1918,16 @@ class GameWorldPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(GameWorldPainter oldDelegate) {
-    // Always repaint if player positions changed
     if (oldDelegate.players.length != players.length) {
       return true;
     }
     
-    // Check if any player position changed
     for (var playerId in players.keys) {
       final oldPlayer = oldDelegate.players[playerId];
       final newPlayer = players[playerId];
       if (oldPlayer == null || newPlayer == null) {
         return true;
       }
-      // Use a small threshold to account for floating point precision
       if ((oldPlayer.x - newPlayer.x).abs() > 0.01 || 
           (oldPlayer.y - newPlayer.y).abs() > 0.01 ||
           oldPlayer.direction != newPlayer.direction) {
@@ -2087,13 +1935,11 @@ class GameWorldPainter extends CustomPainter {
       }
     }
     
-    // Check current player position
     if ((oldDelegate.playerX - playerX).abs() > 0.01 ||
         (oldDelegate.playerY - playerY).abs() > 0.01) {
       return true;
     }
     
-    // Check other properties
     return oldDelegate.currentPlayerName != currentPlayerName ||
         oldDelegate.currentPlayerDirection != currentPlayerDirection ||
         oldDelegate.currentPlayerSpriteType != currentPlayerSpriteType ||
