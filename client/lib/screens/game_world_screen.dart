@@ -34,11 +34,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   final GameService _gameService = GameService();
   final ApiService _apiService = ApiService();
   final Map<String, Player> _players = {};
+  // Interpolation targets for smooth movement
+  final Map<String, Offset> _playerTargetPositions = {};
+  final Map<String, DateTime> _playerLastUpdateTime = {};
   // Game world coordinates: world is 10000x10000, origin at (0, 0) in top-left
   // Player position in world coordinates
   double _playerX = 5000.0; // Start at center of world
   double _playerY = 5000.0; // Start at center of world
-  final double _playerSpeed = 5.0;
+  final double _playerSpeed = 2.5; // Reduced by half
   double _playerSize = 128.0; // Player sprite size (will scale with screen)
   Timer? _positionUpdateTimer;
   Timer? _movementTimer;
@@ -63,20 +66,25 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     final size = mediaQuery.size;
     
     // Mobile devices typically have:
-    // 1. Smaller screens (both width AND height < 768px, or very small in one dimension)
+    // 1. Smaller screens (width OR height < 768px)
     // 2. Higher pixel density (devicePixelRatio > 1.5 for most mobile)
     // 3. Aspect ratio closer to phone/tablet (not ultra-wide desktop)
     
-    // More lenient: only consider mobile if BOTH dimensions are small, or one is very small
-    final isSmallScreen = (size.width < 600 && size.height < 600) || 
-                          (size.width < 400 || size.height < 400);
+    // Very lenient: consider mobile if screen is small OR has high pixel density
+    // This will show joystick on most mobile devices
+    final isSmallScreen = size.width < 768 || size.height < 768;
     final hasHighDensity = mediaQuery.devicePixelRatio > 1.5;
     final aspectRatio = size.width / size.height;
-    final isPhoneAspectRatio = aspectRatio > 0.5 && aspectRatio < 2.5; // Typical phone/tablet range
+    final isPhoneAspectRatio = aspectRatio > 0.4 && aspectRatio < 3.0; // Very wide range
     
-    // Consider it mobile if it's a small screen with high pixel density and phone-like aspect ratio
-    // This prevents desktop browsers with resized windows from showing joystick
-    return isSmallScreen && hasHighDensity && isPhoneAspectRatio;
+    // Consider it mobile if:
+    // - Small screen with reasonable aspect ratio (most mobile devices)
+    // - OR high pixel density with reasonable aspect ratio (mobile devices)
+    // - OR very small screen (definitely mobile)
+    // Only exclude if it's a large screen with low pixel density (desktop)
+    if (size.width < 400 || size.height < 400) return true; // Very small = mobile
+    if (size.width >= 1200 && size.height >= 800 && !hasHighDensity) return false; // Large desktop
+    return (isSmallScreen && isPhoneAspectRatio) || (hasHighDensity && isPhoneAspectRatio);
   }
   
   // Convert world coordinates to screen coordinates (camera system - player always centered)
@@ -97,14 +105,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
   String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view, 'howToPlay' = how to play
-  bool _joystickOnRight = true; // Default: joystick on right side
-  bool _joystickFloating = false; // Default: fixed position, false = floating mode
+  String _joystickMode = 'fixed-right'; // 'fixed-left', 'fixed-right', 'floating-left', 'floating-right'
   Offset? _floatingJoystickPosition; // Position for floating joystick
   bool _showFloatingJoystick = false; // Whether floating joystick is visible
   Map<String, dynamic>? _selectedCharacter; // Selected character in character select screen
   String? _accountId;
   List<dynamic> _characters = [];
   bool _isInitialized = false;
+  final FocusNode _keyboardFocusNode = FocusNode(); // Persistent focus node for keyboard input
 
   @override
   void initState() {
@@ -142,11 +150,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       // Game loop: check pressed keys and move player continuously (60 FPS)
       _movementTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
         _updateMovement();
+        _interpolateOtherPlayers();
       });
       
-      // Send position updates periodically (every 50ms) to keep other players synced
-      // Send even small movements for smoother synchronization
-      _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      // Send position updates more frequently for smoother synchronization
+      _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
         if (widget.characterId == null) return;
         final dx = (_playerX - _lastSentX).abs();
         final dy = (_playerY - _lastSentY).abs();
@@ -322,20 +330,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         final oldX = _players[playerId]!.x;
         final oldY = _players[playerId]!.y;
         
-        // Only update if position actually changed (avoid unnecessary repaints)
-        if ((oldX - newX).abs() > 0.1 || (oldY - newY).abs() > 0.1) {
-          setState(() {
-            _players[playerId]!.x = newX;
-            _players[playerId]!.y = newY;
-            
-            // Infer direction from movement
-            final dx = newX - oldX;
-            final dy = newY - oldY;
-            if (dy != 0) {
-              // Vertical movement - update direction (in game coords, +y is up)
-              _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
-            }
-          });
+        // Store target position for interpolation (don't update immediately)
+        _playerTargetPositions[playerId] = Offset(newX, newY);
+        _playerLastUpdateTime[playerId] = DateTime.now();
+        
+        // Infer direction from movement
+        final dx = newX - oldX;
+        final dy = newY - oldY;
+        if (dy != 0) {
+          // Vertical movement - update direction (in game coords, +y is up)
+          _players[playerId]!.direction = dy > 0 ? PlayerDirection.up : PlayerDirection.down;
         }
       } else {
         // Player moved but not in our list - add them (might be a late join)
@@ -365,30 +369,27 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     double deltaY = 0;
     PlayerDirection? newVerticalDirection;
     
-    // Check if mobile - use joystick if joystick has input, otherwise check screen size
-    // If joystick is being used (has input), it's mobile
+    // Check if joystick is being used (has input)
     final isUsingJoystick = _joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1;
-    final isSmallScreen = _screenWidth < 768 || _screenHeight < 768;
     
-    if (isUsingJoystick || isSmallScreen) {
+    if (isUsingJoystick) {
       // Mobile: use joystick input
-      if (_joystickDeltaX.abs() > 0.1 || _joystickDeltaY.abs() > 0.1) {
-        deltaX = _joystickDeltaX * _playerSpeed;
-        deltaY = _joystickDeltaY * _playerSpeed; // Joystick: negative Y is up, world: up increases Y
-        
-        // Determine direction based on joystick input
-        // Joystick: negative Y is up (toward top of screen), positive Y is down
-        // World: up increases Y, down decreases Y
-        if (_joystickDeltaY.abs() > _joystickDeltaX.abs()) {
-          // Vertical movement dominates
-          newVerticalDirection = _joystickDeltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
-        } else if (_joystickDeltaX != 0) {
-          // Horizontal movement - use last vertical direction
-          // Direction already set to last vertical direction
-        }
+      deltaX = _joystickDeltaX * _playerSpeed;
+      // Invert Y: joystick negative Y (up on screen) should increase world Y (move up)
+      deltaY = -_joystickDeltaY * _playerSpeed;
+      
+      // Determine direction based on joystick input
+      // Joystick: negative Y is up (toward top of screen), positive Y is down
+      // World: up increases Y, down decreases Y
+      if (_joystickDeltaY.abs() > _joystickDeltaX.abs()) {
+        // Vertical movement dominates
+        newVerticalDirection = _joystickDeltaY < 0 ? PlayerDirection.up : PlayerDirection.down;
+      } else if (_joystickDeltaX != 0) {
+        // Horizontal movement - use last vertical direction
+        // Direction already set to last vertical direction
       }
     } else {
-      // Desktop: use keyboard input
+      // Desktop: use keyboard input (always check keyboard, even if no keys pressed yet)
       if (_pressedKeys.isEmpty) return;
       
       // Check which keys are pressed and calculate movement
@@ -441,6 +442,50 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         _playerX = _playerX.clamp(_playerSize / 2, _worldWidth - _playerSize / 2);
         _playerY = _playerY.clamp(_playerSize / 2, _worldHeight - _playerSize / 2);
       });
+    }
+  }
+
+  // Interpolate other players' positions smoothly
+  void _interpolateOtherPlayers() {
+    final now = DateTime.now();
+    bool needsUpdate = false;
+    
+    for (var entry in _playerTargetPositions.entries) {
+      final playerId = entry.key;
+      final targetPos = entry.value;
+      
+      if (!_players.containsKey(playerId)) continue;
+      
+      final player = _players[playerId]!;
+      final currentPos = Offset(player.x, player.y);
+      final distance = (targetPos - currentPos).distance;
+      
+      // If very close, snap to target
+      if (distance < 0.5) {
+        if ((player.x - targetPos.dx).abs() > 0.1 || (player.y - targetPos.dy).abs() > 0.1) {
+          player.x = targetPos.dx;
+          player.y = targetPos.dy;
+          needsUpdate = true;
+        }
+      } else {
+        // Interpolate towards target (lerp factor based on distance and time)
+        final lastUpdate = _playerLastUpdateTime[playerId];
+        final timeSinceUpdate = lastUpdate != null 
+            ? now.difference(lastUpdate).inMilliseconds 
+            : 50;
+        
+        // Use a lerp factor that adapts to update frequency
+        // Faster interpolation for larger distances, slower for small
+        final lerpFactor = (distance > 10) ? 0.3 : 0.15;
+        
+        player.x = currentPos.dx + (targetPos.dx - currentPos.dx) * lerpFactor;
+        player.y = currentPos.dy + (targetPos.dy - currentPos.dy) * lerpFactor;
+        needsUpdate = true;
+      }
+    }
+    
+    if (needsUpdate && mounted) {
+      setState(() {});
     }
   }
 
@@ -553,14 +598,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
             ),
-            // Virtual joystick (mobile only)
-            if (isMobile && widget.characterId != null)
-              _joystickFloating
+            // Virtual joystick (always visible for debugging)
+            if (widget.characterId != null)
+              _joystickMode.startsWith('floating')
                   ? _buildFloatingJoystick()
                   : Positioned(
                       bottom: max(20.0, _screenHeight * 0.05), // At least 20px or 5% of screen height
-                      left: _joystickOnRight ? null : max(20.0, _screenWidth * 0.05), // Left side
-                      right: _joystickOnRight ? max(20.0, _screenWidth * 0.05) : null, // Right side (default)
+                      left: _joystickMode == 'fixed-left' ? max(20.0, _screenWidth * 0.05) : null, // Left side
+                      right: _joystickMode == 'fixed-right' ? max(20.0, _screenWidth * 0.05) : null, // Right side
                       child: VirtualJoystick(
                         size: min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble(), // 20% of smaller dimension, max 150px
                         onMove: (deltaX, deltaY) {
@@ -578,110 +623,208 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           ),
         );
     
-    // Wrap with KeyboardListener only on desktop
-    if (isMobile) {
-      return gameContent;
-    } else {
-      return KeyboardListener(
-        focusNode: FocusNode()..requestFocus(),
-        onKeyEvent: (event) {
-          final key = event.logicalKey;
-          
-          // Track key presses/releases for continuous movement
-          if (event is KeyDownEvent) {
-            if (key == LogicalKeyboardKey.arrowLeft ||
-                key == LogicalKeyboardKey.keyA ||
-                key == LogicalKeyboardKey.arrowRight ||
-                key == LogicalKeyboardKey.keyD ||
-                key == LogicalKeyboardKey.arrowUp ||
-                key == LogicalKeyboardKey.keyW ||
-                key == LogicalKeyboardKey.arrowDown ||
-                key == LogicalKeyboardKey.keyS) {
-              _pressedKeys.add(key);
-            }
-          } else if (event is KeyUpEvent) {
-            _pressedKeys.remove(key);
+    // Always wrap with KeyboardListener for desktop input
+    // On mobile, joystick input takes precedence in _updateMovement
+    // Request focus after build to ensure keyboard input works
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_keyboardFocusNode.hasFocus) {
+        _keyboardFocusNode.requestFocus();
+      }
+    });
+    
+    return KeyboardListener(
+      focusNode: _keyboardFocusNode,
+      onKeyEvent: (event) {
+        final key = event.logicalKey;
+        
+        // Track key presses/releases for continuous movement
+        if (event is KeyDownEvent) {
+          if (key == LogicalKeyboardKey.arrowLeft ||
+              key == LogicalKeyboardKey.keyA ||
+              key == LogicalKeyboardKey.arrowRight ||
+              key == LogicalKeyboardKey.keyD ||
+              key == LogicalKeyboardKey.arrowUp ||
+              key == LogicalKeyboardKey.keyW ||
+              key == LogicalKeyboardKey.arrowDown ||
+              key == LogicalKeyboardKey.keyS) {
+            _pressedKeys.add(key);
           }
-        },
-        child: gameContent,
-      );
-    }
+        } else if (event is KeyUpEvent) {
+          _pressedKeys.remove(key);
+        }
+      },
+      child: gameContent,
+    );
   }
 
   Widget _buildFloatingJoystick() {
-    // Always show invisible touch detector, and show visible joystick when active
+    final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble();
+    
+    // Only show touch detector when modals are NOT open (menus take priority)
+    final modalsOpen = _showSettingsModal || _showCharacterCreateModal;
+    
+    // Determine which quadrant to use (bottom-left or bottom-right)
+    final isFloatingLeft = _joystickMode == 'floating-left';
+    final isFloatingRight = _joystickMode == 'floating-right';
+    
+    // Calculate quadrant boundaries (bottom half of screen, left or right half)
+    final quadrantWidth = _screenWidth / 2;
+    final quadrantHeight = _screenHeight / 2;
+    final quadrantTop = _screenHeight / 2; // Start at middle of screen (bottom half)
+    final quadrantLeft = isFloatingLeft ? 0.0 : (_screenWidth / 2);
+    final quadrantRight = isFloatingRight ? _screenWidth : (_screenWidth / 2);
+    
+    // Helper to check if a position is in the active quadrant
+    bool isInActiveQuadrant(Offset position) {
+      if (modalsOpen) return false;
+      final x = position.dx;
+      final y = position.dy;
+      return y >= quadrantTop && 
+             x >= quadrantLeft && 
+             x < quadrantRight;
+    }
+    
     return Stack(
       children: [
-        // Invisible touch detector for the entire screen
-        Positioned.fill(
-          child: GestureDetector(
-            onPanStart: (details) {
-              setState(() {
-                _floatingJoystickPosition = details.globalPosition;
-                _showFloatingJoystick = true;
-              });
-            },
-            onPanUpdate: (details) {
-              if (_showFloatingJoystick && _floatingJoystickPosition != null) {
-                // Calculate movement relative to joystick center
-                final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble();
-                final localPosition = details.globalPosition - _floatingJoystickPosition!;
-                final center = Offset(joystickSize / 2, joystickSize / 2);
-                final delta = localPosition - center;
-                final maxDistance = (joystickSize / 2) - 30;
-                final distance = delta.distance;
-                
-                double deltaX, deltaY;
-                if (distance <= maxDistance) {
-                  deltaX = delta.dx / maxDistance;
-                  deltaY = delta.dy / maxDistance;
-                } else {
-                  final angle = atan2(delta.dy, delta.dx);
-                  deltaX = cos(angle);
-                  deltaY = sin(angle);
-                }
-                
-                setState(() {
-                  _joystickDeltaX = deltaX;
-                  _joystickDeltaY = deltaY;
-                });
-              }
-            },
-            onPanEnd: (_) {
-              setState(() {
-                _joystickDeltaX = 0;
-                _joystickDeltaY = 0;
-                _showFloatingJoystick = false;
-                _floatingJoystickPosition = null;
-              });
-            },
-            onPanCancel: () {
-              setState(() {
-                _joystickDeltaX = 0;
-                _joystickDeltaY = 0;
-                _showFloatingJoystick = false;
-                _floatingJoystickPosition = null;
-              });
-            },
-            child: Container(color: Colors.transparent),
-          ),
-        ),
-        // Visible joystick at touch position (only when active)
-        if (_showFloatingJoystick && _floatingJoystickPosition != null)
+        // Touch detector only for the active quadrant (only active when modals are closed)
+        if (!modalsOpen)
           Positioned(
-            left: _floatingJoystickPosition!.dx - (min(min(_screenWidth, _screenHeight) * 0.2, 150.0) / 2),
-            top: _floatingJoystickPosition!.dy - (min(min(_screenWidth, _screenHeight) * 0.2, 150.0) / 2),
-            child: VirtualJoystick(
-              size: min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble(),
-              onMove: (deltaX, deltaY) {
+            left: quadrantLeft,
+            top: quadrantTop,
+            width: quadrantWidth,
+            height: quadrantHeight,
+            child: GestureDetector(
+              onPanStart: (details) {
+                final localPosition = details.localPosition;
+                final globalPosition = Offset(quadrantLeft + localPosition.dx, quadrantTop + localPosition.dy);
+                
+                // Only activate if touch is in the active quadrant
+                if (isInActiveQuadrant(globalPosition)) {
+                  setState(() {
+                    _floatingJoystickPosition = globalPosition;
+                    _showFloatingJoystick = true;
+                  });
+                }
+              },
+              onPanUpdate: (details) {
+                if (_showFloatingJoystick && _floatingJoystickPosition != null) {
+                  final localPosition = details.localPosition;
+                  final globalPosition = Offset(quadrantLeft + localPosition.dx, quadrantTop + localPosition.dy);
+                  
+                  // Only process if still in active quadrant
+                  if (isInActiveQuadrant(globalPosition)) {
+                    // Calculate movement relative to joystick center
+                    final center = _floatingJoystickPosition!;
+                    final delta = globalPosition - center;
+                    final maxDistance = (joystickSize / 2) - 30;
+                    final distance = delta.distance;
+                    
+                    double deltaX, deltaY;
+                    if (distance <= maxDistance) {
+                      deltaX = delta.dx / maxDistance;
+                      deltaY = delta.dy / maxDistance;
+                    } else {
+                      final angle = atan2(delta.dy, delta.dx);
+                      deltaX = cos(angle);
+                      deltaY = sin(angle);
+                    }
+                    
+                    setState(() {
+                      _joystickDeltaX = deltaX;
+                      _joystickDeltaY = deltaY;
+                    });
+                  }
+                }
+              },
+              onPanEnd: (_) {
                 setState(() {
-                  _joystickDeltaX = deltaX;
-                  _joystickDeltaY = deltaY;
+                  _joystickDeltaX = 0;
+                  _joystickDeltaY = 0;
+                  _showFloatingJoystick = false;
+                  _floatingJoystickPosition = null;
                 });
               },
+              onPanCancel: () {
+                setState(() {
+                  _joystickDeltaX = 0;
+                  _joystickDeltaY = 0;
+                  _showFloatingJoystick = false;
+                  _floatingJoystickPosition = null;
+                });
+              },
+              child: Container(color: Colors.transparent),
             ),
           ),
+        // Visible joystick at touch position (only when active and modals are closed)
+        if (_showFloatingJoystick && _floatingJoystickPosition != null && !modalsOpen)
+          Positioned(
+            left: _floatingJoystickPosition!.dx - joystickSize / 2,
+            top: _floatingJoystickPosition!.dy - joystickSize / 2,
+            child: _buildFloatingJoystickVisual(joystickSize),
+          ),
       ],
+    );
+  }
+
+  // Build the visual representation of the floating joystick with stick position
+  Widget _buildFloatingJoystickVisual(double size) {
+    final baseRadius = 60.0;
+    final stickRadius = 30.0;
+    final maxDistance = baseRadius - stickRadius;
+    
+    // Calculate stick position from current joystick deltas
+    final stickOffset = Offset(
+      _joystickDeltaX * maxDistance,
+      _joystickDeltaY * maxDistance,
+    );
+    
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.black.withOpacity(0.3),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.5),
+          width: 2,
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Base circle
+          Center(
+            child: Container(
+              width: baseRadius * 2,
+              height: baseRadius * 2,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.2),
+              ),
+            ),
+          ),
+          // Stick (positioned based on joystick deltas)
+          Center(
+            child: Transform.translate(
+              offset: stickOffset,
+              child: Container(
+                width: stickRadius * 2,
+                height: stickRadius * 2,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.9),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -690,8 +833,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       child: GestureDetector(
         onTap: () {}, // Prevent closing when tapping inside
         child: Container(
-          width: 200,
-          height: 300,
+          width: 300,
+          height: 400,
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(8),
@@ -1122,56 +1265,46 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         Expanded(
           child: ListView(
             children: [
-              // Joystick mode toggle (floating vs fixed)
+              // Joystick mode selection
               ListTile(
                 dense: true,
-                leading: const Icon(Icons.touch_app, size: 20),
+                leading: const Icon(Icons.gamepad, size: 20),
                 title: const Text(
-                  'Floating Joystick',
+                  'Joystick Mode',
                   style: TextStyle(fontSize: 14),
                 ),
                 subtitle: Text(
-                  _joystickFloating ? 'Touch anywhere to use' : 'Fixed position',
+                  _joystickMode == 'fixed-left'
+                      ? 'Fixed Left'
+                      : _joystickMode == 'fixed-right'
+                          ? 'Fixed Right'
+                          : _joystickMode == 'floating-left'
+                              ? 'Floating Left'
+                              : 'Floating Right',
                   style: const TextStyle(fontSize: 12),
                 ),
-                trailing: Switch(
-                  value: _joystickFloating,
+                trailing: DropdownButton<String>(
+                  value: _joystickMode,
+                  items: const [
+                    DropdownMenuItem(value: 'fixed-left', child: Text('Fixed Left')),
+                    DropdownMenuItem(value: 'fixed-right', child: Text('Fixed Right')),
+                    DropdownMenuItem(value: 'floating-left', child: Text('Floating Left')),
+                    DropdownMenuItem(value: 'floating-right', child: Text('Floating Right')),
+                  ],
                   onChanged: (value) {
-                    setState(() {
-                      _joystickFloating = value;
-                      // Reset floating joystick state when switching modes
-                      if (!value) {
+                    if (value != null) {
+                      setState(() {
+                        _joystickMode = value;
+                        // Reset floating joystick state when switching modes
                         _showFloatingJoystick = false;
                         _floatingJoystickPosition = null;
                         _joystickDeltaX = 0;
                         _joystickDeltaY = 0;
-                      }
-                    });
+                      });
+                    }
                   },
                 ),
               ),
-              // Joystick position toggle (only show if not floating)
-              if (!_joystickFloating)
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.gamepad, size: 20),
-                  title: const Text(
-                    'Joystick Position',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                  subtitle: Text(
-                    _joystickOnRight ? 'Right' : 'Left',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  trailing: Switch(
-                    value: _joystickOnRight,
-                    onChanged: (value) {
-                      setState(() {
-                        _joystickOnRight = value;
-                      });
-                    },
-                  ),
-                ),
             ],
           ),
         ),
@@ -1188,8 +1321,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         builder: (context, setModalState) {
           final focusNode = FocusNode();
           return Container(
-            width: 200,
-            height: 300,
+            width: 300,
+            height: 400,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(8),
@@ -1425,6 +1558,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   @override
   void dispose() {
+    _keyboardFocusNode.dispose();
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
     // Remove only this screen's callbacks, don't clear all
