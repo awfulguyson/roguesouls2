@@ -114,10 +114,18 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   List<dynamic> _characters = [];
   bool _isInitialized = false;
   final FocusNode _keyboardFocusNode = FocusNode(); // Persistent focus node for keyboard input
+  String? _currentCharacterId; // Track current character ID (can be different from widget.characterId)
+  String? _currentCharacterName;
+  String? _currentSpriteType;
 
   @override
   void initState() {
     super.initState();
+    // Initialize current character from widget
+    _currentCharacterId = widget.characterId;
+    _currentCharacterName = widget.characterName;
+    _currentSpriteType = widget.spriteType;
+    
     _loadSprites();
     // Set up callbacks BEFORE connecting to ensure we receive all events
     _setupGameService();
@@ -130,46 +138,46 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       print('Socket connected, requesting player list...');
       // Request current players list
       _gameService.socket?.emit('game:requestPlayers');
-    });
-    
-    // Only join game if character is loaded
-    if (widget.characterId != null) {
-      // Wait for socket to connect before joining
-      _gameService.socket?.on('connect', (_) {
+      
+      // Join game if character is loaded
+      if (_currentCharacterId != null) {
         Future.delayed(const Duration(milliseconds: 500), () {
           _joinGameWithCharacter();
         });
-      });
+      }
+    });
+    
+    // Also try after a delay in case already connected
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (_currentCharacterId != null && _gameService.socket?.connected == true) {
+        _joinGameWithCharacter();
+      }
+    });
+    
+    // Always start game loop: check pressed keys and move player continuously (60 FPS)
+    // This allows interpolation of other players even without a character
+    _movementTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      _updateMovement();
+      _interpolateOtherPlayers();
+    });
+    
+    // Always start position update timer (only sends if we have a character)
+    _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
+      if (_currentCharacterId == null) return;
+      final dx = (_playerX - _lastSentX).abs();
+      final dy = (_playerY - _lastSentY).abs();
       
-      // Also try after a delay in case already connected
-      Future.delayed(const Duration(milliseconds: 1500), () {
-        if (widget.characterId != null && _gameService.socket?.connected == true) {
-          _joinGameWithCharacter();
-        }
-      });
-      
-      // Game loop: check pressed keys and move player continuously (60 FPS)
-      _movementTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-        _updateMovement();
-        _interpolateOtherPlayers();
-      });
-      
-      // Send position updates more frequently for smoother synchronization
-      _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
-        if (widget.characterId == null) return;
-        final dx = (_playerX - _lastSentX).abs();
-        final dy = (_playerY - _lastSentY).abs();
-        
-        // Send if moved more than 0.5 pixels (more frequent updates)
-        if (dx > 0.5 || dy > 0.5) {
-          // Send game world coordinates directly (not screen coordinates)
-          _gameService.movePlayer(_playerX, _playerY);
-          _lastSentX = _playerX;
-          _lastSentY = _playerY;
-        }
-      });
-    } else {
-      // No character loaded - show settings modal
+      // Send if moved more than 0.5 pixels (more frequent updates)
+      if (dx > 0.5 || dy > 0.5) {
+        // Send game world coordinates directly (not screen coordinates)
+        _gameService.movePlayer(_playerX, _playerY);
+        _lastSentX = _playerX;
+        _lastSentY = _playerY;
+      }
+    });
+    
+    // Show settings modal if no character loaded
+    if (_currentCharacterId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         setState(() {
           _showSettingsModal = true;
@@ -181,13 +189,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   void _joinGameWithCharacter() {
-    if (widget.characterId == null) return;
-    print('Joining game with character: ${widget.characterId}');
+    if (_currentCharacterId == null || _currentCharacterName == null) return;
+    print('Joining game with character: $_currentCharacterId');
     // Send game world coordinates directly (not screen coordinates)
     _gameService.joinGame(
-      widget.characterId!,
-      widget.characterName!,
-      spriteType: widget.spriteType ?? 'char-1',
+      _currentCharacterId!,
+      _currentCharacterName!,
+      spriteType: _currentSpriteType ?? 'char-1',
       x: _playerX,
       y: _playerY,
     );
@@ -267,7 +275,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   void _setupGameService() {
     _playersListCallback = (players) {
-      print('onPlayersList called with ${players.length} players, characterId: ${widget.characterId}');
+      print('onPlayersList called with ${players.length} players, characterId: $_currentCharacterId');
       if (!mounted) {
         print('Skipping: not mounted');
         return;
@@ -280,7 +288,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           print('Parsed player: id=${player.id}, name=${player.name}, x=${player.x}, y=${player.y}');
           // Positions from server are already in game world coordinates
           // Only skip if this is our own character (when we have one)
-          if (widget.characterId == null || player.id != widget.characterId) {
+          if (_currentCharacterId == null || player.id != _currentCharacterId) {
             print('Adding player to map: ${player.id}');
             _players[player.id] = player;
           } else {
@@ -293,7 +301,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.addPlayersListListener(_playersListCallback);
 
     _playerJoinedCallback = (data) {
-      print('onPlayerJoined called: $data, characterId: ${widget.characterId}');
+      print('onPlayerJoined called: $data, characterId: $_currentCharacterId');
       if (!mounted) {
         print('Skipping: not mounted');
         return;
@@ -303,7 +311,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         print('Parsed joined player: id=${player.id}, name=${player.name}');
         // Positions from server are already in game world coordinates
         // Only skip if this is our own character (when we have one)
-        if (widget.characterId == null || player.id != widget.characterId) {
+        if (_currentCharacterId == null || player.id != _currentCharacterId) {
           print('Adding joined player to map: ${player.id}');
           _players[player.id] = player;
         } else {
@@ -318,7 +326,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       if (!mounted) return;
       final playerId = data['id'] as String;
       // Skip our own movement updates (we handle our own position locally)
-      if (widget.characterId != null && playerId == widget.characterId) {
+      if (_currentCharacterId != null && playerId == _currentCharacterId) {
         return;
       }
       
@@ -364,7 +372,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   void _updateMovement() {
-    if (widget.characterId == null) return; // Don't allow movement without character
+    if (_currentCharacterId == null) return; // Don't allow movement without character
     
     double deltaX = 0;
     double deltaY = 0;
@@ -529,10 +537,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _players,
                   _playerX,
                   _playerY,
-                  widget.characterId ?? '',
-                  widget.characterName ?? '',
+                  _currentCharacterId ?? '',
+                  _currentCharacterName ?? '',
                   _playerDirection,
-                  widget.spriteType ?? 'char-1',
+                  _currentSpriteType ?? 'char-1',
                   _char1Sprite,
                   _char2Sprite,
                   _worldBackground,
@@ -583,12 +591,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      widget.characterId == null 
+                      _currentCharacterId == null 
                           ? 'No Character'
                           : 'Players: ${_players.length + 1}',
                       style: const TextStyle(color: Colors.white, fontSize: 12),
                     ),
-                    if (widget.characterId != null)
+                    if (_currentCharacterId != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
@@ -601,7 +609,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
               ),
             ),
             // Virtual joystick (always visible for debugging)
-            if (widget.characterId != null)
+            if (_currentCharacterId != null)
               _joystickMode.startsWith('floating')
                   ? _buildFloatingJoystick()
                   : Positioned(
@@ -1397,7 +1405,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                                 _lastSentX = _playerX;
                                 _lastSentY = _playerY;
                                 // Send teleport to server
-                                if (widget.characterId != null) {
+                                if (_currentCharacterId != null) {
                                   _gameService.movePlayer(_playerX, _playerY);
                                 }
                               });
@@ -1677,18 +1685,18 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         if (nameController.text.isEmpty || _accountId == null) return;
                         
                         try {
-                          await _apiService.createCharacter(
+                          final newCharacter = await _apiService.createCharacter(
                             _accountId!,
                             nameController.text,
                             selectedSpriteType,
                           );
                           await _refreshCharacters();
-                          // Close create modal and show character select in settings
+                          // Auto-load the newly created character
                           if (mounted) {
-                            setState(() {
-                              _showCharacterCreateModal = false;
-                              _showSettingsModal = true;
-                              _settingsView = 'characterSelect';
+                            await _loadCharacter({
+                              'id': newCharacter['id'],
+                              'name': newCharacter['name'],
+                              'spriteType': newCharacter['spriteType'],
                             });
                           }
                         } catch (e) {
@@ -1718,21 +1726,22 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _showCharacterCreateModal = false;
       _settingsView = null;
       _selectedCharacter = null;
+      
+      // Update current character state
+      _currentCharacterId = character['id'] as String;
+      _currentCharacterName = character['name'] as String;
+      _currentSpriteType = character['spriteType'] as String? ?? 'char-1';
     });
 
-    // Update widget state by replacing the screen, preserving accountId and WebSocket connection
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => GameWorldScreen(
-          characterId: character['id'] as String,
-          characterName: character['name'] as String,
-          spriteType: character['spriteType'] as String? ?? 'char-1',
-          isTemporary: widget.isTemporary,
-          accountId: _accountId, // Preserve the account ID
-        ),
-      ),
-    );
+    // Join game with the new character
+    if (_gameService.socket?.connected == true) {
+      _joinGameWithCharacter();
+    } else {
+      // Wait for connection
+      _gameService.socket?.on('connect', (_) {
+        _joinGameWithCharacter();
+      });
+    }
   }
 
   Future<void> _refreshCharacters() async {
