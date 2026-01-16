@@ -555,20 +555,22 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             ),
             // Virtual joystick (mobile only)
             if (isMobile && widget.characterId != null)
-              Positioned(
-                bottom: max(20.0, _screenHeight * 0.05), // At least 20px or 5% of screen height
-                left: _joystickOnRight ? null : max(20.0, _screenWidth * 0.05), // Left side
-                right: _joystickOnRight ? max(20.0, _screenWidth * 0.05) : null, // Right side (default)
-                child: VirtualJoystick(
-                  size: min(min(_screenWidth, _screenHeight) * 0.2, 150), // 20% of smaller dimension, max 150px
-                  onMove: (deltaX, deltaY) {
-                    setState(() {
-                      _joystickDeltaX = deltaX;
-                      _joystickDeltaY = deltaY;
-                    });
-                  },
-                ),
-              ),
+              _joystickFloating
+                  ? _buildFloatingJoystick()
+                  : Positioned(
+                      bottom: max(20.0, _screenHeight * 0.05), // At least 20px or 5% of screen height
+                      left: _joystickOnRight ? null : max(20.0, _screenWidth * 0.05), // Left side
+                      right: _joystickOnRight ? max(20.0, _screenWidth * 0.05) : null, // Right side (default)
+                      child: VirtualJoystick(
+                        size: min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble(), // 20% of smaller dimension, max 150px
+                        onMove: (deltaX, deltaY) {
+                          setState(() {
+                            _joystickDeltaX = deltaX;
+                            _joystickDeltaY = deltaY;
+                          });
+                        },
+                      ),
+                    ),
             // Character creation modal (standalone, only when not in settings)
             if (_showCharacterCreateModal && !_showSettingsModal)
               _buildCharacterCreateModal(),
@@ -607,77 +609,79 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   }
 
   Widget _buildFloatingJoystick() {
-    if (!_showFloatingJoystick || _floatingJoystickPosition == null) {
-      // Invisible touch detector for the entire screen
-      return Positioned.fill(
-        child: GestureDetector(
-          onPanStart: (details) {
-            setState(() {
-              _floatingJoystickPosition = details.globalPosition;
-              _showFloatingJoystick = true;
-            });
-          },
-          onPanUpdate: (details) {
-            if (_showFloatingJoystick && _floatingJoystickPosition != null) {
-              // Update joystick position if dragging
-              final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150);
-              final localPosition = details.globalPosition - _floatingJoystickPosition!;
-              final center = Offset(joystickSize / 2, joystickSize / 2);
-              final delta = localPosition - center;
-              final maxDistance = (joystickSize / 2) - 30;
-              final distance = delta.distance;
-              
-              double deltaX, deltaY;
-              if (distance <= maxDistance) {
-                deltaX = delta.dx / maxDistance;
-                deltaY = delta.dy / maxDistance;
-              } else {
-                final angle = atan2(delta.dy, delta.dx);
-                deltaX = cos(angle);
-                deltaY = sin(angle);
-              }
-              
+    // Always show invisible touch detector, and show visible joystick when active
+    return Stack(
+      children: [
+        // Invisible touch detector for the entire screen
+        Positioned.fill(
+          child: GestureDetector(
+            onPanStart: (details) {
               setState(() {
-                _joystickDeltaX = deltaX;
-                _joystickDeltaY = deltaY;
+                _floatingJoystickPosition = details.globalPosition;
+                _showFloatingJoystick = true;
               });
-            }
-          },
-          onPanEnd: (_) {
-            setState(() {
-              _joystickDeltaX = 0;
-              _joystickDeltaY = 0;
-              _showFloatingJoystick = false;
-              _floatingJoystickPosition = null;
-            });
-          },
-          onPanCancel: () {
-            setState(() {
-              _joystickDeltaX = 0;
-              _joystickDeltaY = 0;
-              _showFloatingJoystick = false;
-              _floatingJoystickPosition = null;
-            });
-          },
-          child: Container(color: Colors.transparent),
+            },
+            onPanUpdate: (details) {
+              if (_showFloatingJoystick && _floatingJoystickPosition != null) {
+                // Calculate movement relative to joystick center
+                final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble();
+                final localPosition = details.globalPosition - _floatingJoystickPosition!;
+                final center = Offset(joystickSize / 2, joystickSize / 2);
+                final delta = localPosition - center;
+                final maxDistance = (joystickSize / 2) - 30;
+                final distance = delta.distance;
+                
+                double deltaX, deltaY;
+                if (distance <= maxDistance) {
+                  deltaX = delta.dx / maxDistance;
+                  deltaY = delta.dy / maxDistance;
+                } else {
+                  final angle = atan2(delta.dy, delta.dx);
+                  deltaX = cos(angle);
+                  deltaY = sin(angle);
+                }
+                
+                setState(() {
+                  _joystickDeltaX = deltaX;
+                  _joystickDeltaY = deltaY;
+                });
+              }
+            },
+            onPanEnd: (_) {
+              setState(() {
+                _joystickDeltaX = 0;
+                _joystickDeltaY = 0;
+                _showFloatingJoystick = false;
+                _floatingJoystickPosition = null;
+              });
+            },
+            onPanCancel: () {
+              setState(() {
+                _joystickDeltaX = 0;
+                _joystickDeltaY = 0;
+                _showFloatingJoystick = false;
+                _floatingJoystickPosition = null;
+              });
+            },
+            child: Container(color: Colors.transparent),
+          ),
         ),
-      );
-    }
-    
-    // Visible joystick at touch position
-    final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150);
-    return Positioned(
-      left: _floatingJoystickPosition!.dx - joystickSize / 2,
-      top: _floatingJoystickPosition!.dy - joystickSize / 2,
-      child: VirtualJoystick(
-        size: joystickSize,
-        onMove: (deltaX, deltaY) {
-          setState(() {
-            _joystickDeltaX = deltaX;
-            _joystickDeltaY = deltaY;
-          });
-        },
-      ),
+        // Visible joystick at touch position (only when active)
+        if (_showFloatingJoystick && _floatingJoystickPosition != null)
+          Positioned(
+            left: _floatingJoystickPosition!.dx - (min(min(_screenWidth, _screenHeight) * 0.2, 150.0) / 2),
+            top: _floatingJoystickPosition!.dy - (min(min(_screenWidth, _screenHeight) * 0.2, 150.0) / 2),
+            child: VirtualJoystick(
+              size: min(min(_screenWidth, _screenHeight) * 0.2, 150.0).toDouble(),
+              onMove: (deltaX, deltaY) {
+                setState(() {
+                  _joystickDeltaX = deltaX;
+                  _joystickDeltaY = deltaY;
+                });
+              },
+            ),
+          ),
+      ],
     );
   }
 
