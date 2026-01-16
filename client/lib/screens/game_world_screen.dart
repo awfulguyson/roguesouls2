@@ -532,7 +532,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             Container(
               color: const Color(0xFF222222), // Dark grey background
               child: CustomPaint(
-                key: ValueKey('game_${_players.length}_${_worldBackground != null ? "bg" : "nobg"}_${DateTime.now().millisecondsSinceEpoch ~/ 100}'), // Force repaint on player changes or background load
+                key: ValueKey('game_${_players.length}_${_worldBackground != null ? "bg" : "nobg"}'), // Force repaint on player changes or background load
                 painter: GameWorldPainter(
                   _players,
                   _playerX,
