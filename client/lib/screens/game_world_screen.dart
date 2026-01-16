@@ -319,12 +319,19 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           _playerTargetPositions[playerId] = Offset(newX, newY);
           _playerLastUpdateTime[playerId] = DateTime.now();
           
-          // Update position immediately for large movements to make it visible right away
+          // Always update position immediately to make movement visible
+          // For large movements, jump closer immediately; for small movements, update fully
           final distance = sqrt(dx * dx + dy * dy);
           if (distance > 5.0) {
             // For large movements, jump closer immediately
             player.x = oldX + (dx * 0.5);
             player.y = oldY + (dy * 0.5);
+          } else {
+            // For small movements, update to target immediately to ensure visibility
+            player.x = newX;
+            player.y = newY;
+            // Remove from interpolation since we're already at target
+            _playerTargetPositions.remove(playerId);
           }
         });
       } else {
@@ -448,12 +455,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         final newX = currentPos.dx + (targetPos.dx - currentPos.dx) * lerpFactor;
         final newY = currentPos.dy + (targetPos.dy - currentPos.dy) * lerpFactor;
         
-        // Only update if there's meaningful movement
-        if ((player.x - newX).abs() > 0.01 || (player.y - newY).abs() > 0.01) {
-          player.x = newX;
-          player.y = newY;
-          needsUpdate = true;
-        }
+        // Always update to ensure smooth movement and visibility
+        player.x = newX;
+        player.y = newY;
+        needsUpdate = true;
       }
     }
     
@@ -462,7 +467,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _playerTargetPositions.remove(playerId);
     }
     
-    // Only call setState if there was an actual update
+    // Always call setState if there are active targets to ensure repaints
     if (needsUpdate && mounted) {
       setState(() {});
     }
@@ -497,7 +502,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             Container(
               color: const Color(0xFF222222),
               child: CustomPaint(
-                key: ValueKey('game_${_players.length}_${_worldBackground != null ? "bg" : "nobg"}'),
                 painter: GameWorldPainter(
                   _players,
                   _playerX,
