@@ -147,6 +147,20 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     });
     
+    // Handle reconnection - rejoin game if we have a character
+    _gameService.socket?.on('reconnect', (_) {
+      print('Socket reconnected, rejoining game...');
+      // Request fresh player list
+      _gameService.socket?.emit('game:requestPlayers');
+      
+      // Rejoin game if character is loaded
+      if (_currentCharacterId != null) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _joinGameWithCharacter();
+        });
+      }
+    });
+    
     // Also try after a delay in case already connected
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (_currentCharacterId != null && _gameService.socket?.connected == true) {

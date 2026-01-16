@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../config/app_config.dart';
 
@@ -79,6 +80,12 @@ class GameService {
   
   bool _isConnected = false;
   bool _isConnecting = false;
+  Timer? _reconnectTimer;
+  Timer? _keepaliveTimer;
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 5;
+  static const Duration _reconnectDelay = Duration(seconds: 3);
+  static const Duration _keepaliveInterval = Duration(seconds: 30);
 
   void connect() {
     // Don't create a new connection if already connected or connecting
@@ -92,6 +99,10 @@ class GameService {
     socket = IO.io(AppConfig.websocketUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
+      'reconnection': true,
+      'reconnectionAttempts': _maxReconnectAttempts,
+      'reconnectionDelay': _reconnectDelay.inMilliseconds,
+      'reconnectionDelayMax': _reconnectDelay.inMilliseconds * 2,
     });
 
     socket!.connect();
@@ -100,19 +111,57 @@ class GameService {
     socket!.on('connect', (_) {
       _isConnected = true;
       _isConnecting = false;
+      _reconnectAttempts = 0;
       print('✅ Connected to game server: ${socket!.id}');
       // Request current players list
       socket!.emit('game:requestPlayers');
+      
+      // Start keepalive timer
+      _startKeepalive();
+      
+      // Cancel any pending reconnection attempts
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
     });
 
-    socket!.on('disconnect', (_) {
+    socket!.on('disconnect', (reason) {
       _isConnected = false;
       _isConnecting = false;
-      print('❌ Disconnected from game server');
+      print('❌ Disconnected from game server: $reason');
+      _stopKeepalive();
+      
+      // Attempt to reconnect if not explicitly disconnected
+      if (reason != 'io client disconnect') {
+        _scheduleReconnect();
+      }
     });
 
     socket!.on('error', (error) {
       print('❌ Socket error: $error');
+      _isConnected = false;
+      _isConnecting = false;
+      _stopKeepalive();
+      
+      // Attempt to reconnect on error
+      if (socket != null && !socket!.connected) {
+        _scheduleReconnect();
+      }
+    });
+    
+    // Handle reconnection events
+    socket!.on('reconnect', (attemptNumber) {
+      print('🔄 Reconnected after $attemptNumber attempts');
+      _reconnectAttempts = 0;
+    });
+    
+    socket!.on('reconnect_attempt', (attemptNumber) {
+      print('🔄 Reconnection attempt $attemptNumber');
+      _reconnectAttempts = attemptNumber;
+    });
+    
+    socket!.on('reconnect_failed', (_) {
+      print('❌ Reconnection failed after $_maxReconnectAttempts attempts');
+      _reconnectAttempts = 0;
     });
 
     socket!.on('game:players', (data) {
@@ -169,13 +218,60 @@ class GameService {
     socket?.emit('chat:message', {'message': message});
   }
 
+  void _startKeepalive() {
+    _stopKeepalive(); // Stop any existing keepalive
+    _keepaliveTimer = Timer.periodic(_keepaliveInterval, (timer) {
+      if (socket != null && socket!.connected) {
+        // Send a ping/keepalive by requesting player list (lightweight operation)
+        socket!.emit('game:requestPlayers');
+      } else {
+        // Connection lost, stop keepalive and attempt reconnect
+        _stopKeepalive();
+        if (socket != null) {
+          _scheduleReconnect();
+        }
+      }
+    });
+  }
+  
+  void _stopKeepalive() {
+    _keepaliveTimer?.cancel();
+    _keepaliveTimer = null;
+  }
+  
+  void _scheduleReconnect() {
+    // Don't schedule if already scheduled or connecting
+    if (_reconnectTimer != null || _isConnecting) {
+      return;
+    }
+    
+    // Don't reconnect if we've exceeded max attempts
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      print('Max reconnection attempts reached, stopping reconnection');
+      return;
+    }
+    
+    _reconnectTimer = Timer(_reconnectDelay, () {
+      if (socket != null && !socket!.connected && !_isConnecting) {
+        print('🔄 Attempting to reconnect...');
+        _reconnectAttempts++;
+        socket!.connect();
+      }
+      _reconnectTimer = null;
+    });
+  }
+
   void disconnect() {
     // Only disconnect if explicitly requested (e.g., logging out)
     // Don't disconnect on screen navigation
+    _stopKeepalive();
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     socket?.disconnect();
     socket = null;
     _isConnected = false;
     _isConnecting = false;
+    _reconnectAttempts = 0;
   }
   
   // Method to remove a specific callback (for cleanup when screen disposes)
