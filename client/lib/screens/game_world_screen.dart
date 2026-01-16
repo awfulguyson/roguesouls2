@@ -37,10 +37,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   // Interpolation targets for smooth movement
   final Map<String, Offset> _playerTargetPositions = {};
   final Map<String, DateTime> _playerLastUpdateTime = {};
-  // Game world coordinates: world is 10000x10000, origin at (0, 0) in top-left
+  // Game world coordinates: world is 10000x10000, origin at (0, 0) in center
+  // World bounds: -5000 to 5000 (top-right is 5000,5000, bottom-left is -5000,-5000)
   // Player position in world coordinates
-  double _playerX = 5000.0; // Start at center of world
-  double _playerY = 5000.0; // Start at center of world
+  double _playerX = 0.0; // Start at center of world
+  double _playerY = 0.0; // Start at center of world
   double _playerSpeed = 2.5; // Base speed (can be modified by dev tools)
   double _playerSize = 128.0; // Player sprite size (will scale with screen)
   Timer? _positionUpdateTimer;
@@ -48,9 +49,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   double _lastSentX = 0.0;
   double _lastSentY = 0.0;
   
-  // World dimensions
+  // World dimensions (total size, bounds are -halfSize to +halfSize)
   static const double _worldWidth = 10000.0;
   static const double _worldHeight = 10000.0;
+  static const double _worldMinX = -5000.0;
+  static const double _worldMaxX = 5000.0;
+  static const double _worldMinY = -5000.0;
+  static const double _worldMaxY = 5000.0;
   
   // Screen dimensions (playable area) - will be set from MediaQuery
   double _screenWidth = 800.0;
@@ -470,10 +475,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           _playerDirection = _lastVerticalDirection;
         }
         
-        // Keep player in world bounds (world is 10000x10000)
-        // Allow player to go to exact edges (0 and 10000)
-        _playerX = _playerX.clamp(0.0, _worldWidth);
-        _playerY = _playerY.clamp(0.0, _worldHeight);
+        // Keep player in world bounds (world is -5000 to 5000)
+        // Allow player to go to exact edges
+        _playerX = _playerX.clamp(_worldMinX, _worldMaxX);
+        _playerY = _playerY.clamp(_worldMinY, _worldMaxY);
       });
     }
   }
@@ -1429,8 +1434,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                             final y = double.tryParse(teleportYController.text);
                             if (x != null && y != null) {
                               setState(() {
-                                _playerX = x.clamp(0.0, _worldWidth);
-                                _playerY = y.clamp(0.0, _worldHeight);
+                                _playerX = x.clamp(_worldMinX, _worldMaxX);
+                                _playerY = y.clamp(_worldMinY, _worldMaxY);
                                 // Update last sent position to prevent unnecessary network updates
                                 _lastSentX = _playerX;
                                 _lastSentY = _playerY;
@@ -1455,8 +1460,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         TextButton(
                           onPressed: () {
                             setState(() {
-                              teleportXController.text = '5000';
-                              teleportYController.text = '5000';
+                              teleportXController.text = '0';
+                              teleportYController.text = '0';
                             });
                           },
                           child: const Text('Center'),
@@ -1829,6 +1834,12 @@ class GameWorldPainter extends CustomPainter {
   final double Function(double) worldToScreenX;
   final double Function(double) worldToScreenY;
   final double playerSize;
+  
+  // World bounds (center at 0,0, extends -5000 to 5000)
+  static const double _worldMinX = -5000.0;
+  static const double _worldMaxX = 5000.0;
+  static const double _worldMinY = -5000.0;
+  static const double _worldMaxY = 5000.0;
 
   GameWorldPainter(
     this.players,
@@ -1913,21 +1924,24 @@ class GameWorldPainter extends CustomPainter {
       const worldWidth = 10000.0;
       const worldHeight = 10000.0;
       
-      // Clamp world coordinates to valid range
-      final clampedWorldStartX = worldStartX.clamp(0.0, worldWidth);
-      final clampedWorldStartY = worldStartY.clamp(0.0, worldHeight);
-      final clampedWorldEndX = worldEndX.clamp(0.0, worldWidth);
-      final clampedWorldEndY = worldEndY.clamp(0.0, worldHeight);
+      // Clamp world coordinates to valid range (-5000 to 5000)
+      final clampedWorldStartX = worldStartX.clamp(_worldMinX, _worldMaxX);
+      final clampedWorldStartY = worldStartY.clamp(_worldMinY, _worldMaxY);
+      final clampedWorldEndX = worldEndX.clamp(_worldMinX, _worldMaxX);
+      final clampedWorldEndY = worldEndY.clamp(_worldMinY, _worldMaxY);
       
       // Calculate which part of the background image to show
-      // X is straightforward: left to right
-      final sourceX = (clampedWorldStartX / worldWidth) * bgWidth;
-      // Y: when player Y increases (moves up in world), we want to show lower part of image
-      // World Y=0 is top, Y=10000 is bottom. Image Y=0 is top, Y=bgHeight is bottom.
-      // So when world Y increases, sourceY should increase (move down in image)
-      final sourceY = (clampedWorldStartY / worldHeight) * bgHeight;
-      final sourceWidth = ((clampedWorldEndX - clampedWorldStartX) / worldWidth) * bgWidth;
-      final sourceHeight = ((clampedWorldEndY - clampedWorldStartY) / worldHeight) * bgHeight;
+      // Convert world coordinates (-5000 to 5000) to image coordinates (0 to bgWidth/bgHeight)
+      // World -5000 maps to image 0, world 0 maps to image center, world 5000 maps to image end
+      final normalizedStartX = (clampedWorldStartX - _worldMinX) / worldWidth; // 0.0 to 1.0
+      final normalizedStartY = (clampedWorldStartY - _worldMinY) / worldHeight; // 0.0 to 1.0
+      final normalizedEndX = (clampedWorldEndX - _worldMinX) / worldWidth;
+      final normalizedEndY = (clampedWorldEndY - _worldMinY) / worldHeight;
+      
+      final sourceX = normalizedStartX * bgWidth;
+      final sourceY = normalizedStartY * bgHeight;
+      final sourceWidth = (normalizedEndX - normalizedStartX) * bgWidth;
+      final sourceHeight = (normalizedEndY - normalizedStartY) * bgHeight;
       
       // Calculate screen position for the background
       // If camera is outside world bounds, offset the destination to show black
