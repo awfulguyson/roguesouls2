@@ -38,6 +38,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   // Player position in world coordinates
   double _playerX = 5000.0; // Start at center of world
   double _playerY = 5000.0; // Start at center of world
+  
+  // Image version for cache busting - increment this when you update world-img.jpg
+  static const String _worldImageVersion = 'v1';
   final double _playerSpeed = 5.0;
   double _playerSize = 128.0; // Player sprite size (will scale with screen)
   Timer? _positionUpdateTimer;
@@ -231,12 +234,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _char2Sprite = char2Frame.image;
 
     // Load world background image
+    // When you update world-img.jpg, increment _worldImageVersion above (v1 -> v2, etc.)
+    // This will force browsers to fetch the new image instead of using cached version
     try {
       final worldBytes = await rootBundle.load('assets/world-img.jpg');
       final worldCodec = await ui.instantiateImageCodec(worldBytes.buffer.asUint8List());
       final worldFrame = await worldCodec.getNextFrame();
       _worldBackground = worldFrame.image;
-      print('✅ World background loaded: ${_worldBackground!.width}x${_worldBackground!.height}');
+      print('✅ World background loaded: ${_worldBackground!.width}x${_worldBackground!.height} (version: $_worldImageVersion)');
     } catch (e) {
       print('❌ Failed to load world background: $e');
       _worldBackground = null;
