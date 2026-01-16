@@ -98,6 +98,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   bool _showCharacterCreateModal = false;
   String? _settingsView; // null = main menu, 'characterSelect' = character select, 'settings' = settings view, 'howToPlay' = how to play
   bool _joystickOnRight = true; // Default: joystick on right side
+  bool _joystickFloating = false; // Default: fixed position, false = floating mode
+  Offset? _floatingJoystickPosition; // Position for floating joystick
+  bool _showFloatingJoystick = false; // Whether floating joystick is visible
   Map<String, dynamic>? _selectedCharacter; // Selected character in character select screen
   String? _accountId;
   List<dynamic> _characters = [];
@@ -603,6 +606,81 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     }
   }
 
+  Widget _buildFloatingJoystick() {
+    if (!_showFloatingJoystick || _floatingJoystickPosition == null) {
+      // Invisible touch detector for the entire screen
+      return Positioned.fill(
+        child: GestureDetector(
+          onPanStart: (details) {
+            setState(() {
+              _floatingJoystickPosition = details.globalPosition;
+              _showFloatingJoystick = true;
+            });
+          },
+          onPanUpdate: (details) {
+            if (_showFloatingJoystick && _floatingJoystickPosition != null) {
+              // Update joystick position if dragging
+              final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150);
+              final localPosition = details.globalPosition - _floatingJoystickPosition!;
+              final center = Offset(joystickSize / 2, joystickSize / 2);
+              final delta = localPosition - center;
+              final maxDistance = (joystickSize / 2) - 30;
+              final distance = delta.distance;
+              
+              double deltaX, deltaY;
+              if (distance <= maxDistance) {
+                deltaX = delta.dx / maxDistance;
+                deltaY = delta.dy / maxDistance;
+              } else {
+                final angle = atan2(delta.dy, delta.dx);
+                deltaX = cos(angle);
+                deltaY = sin(angle);
+              }
+              
+              setState(() {
+                _joystickDeltaX = deltaX;
+                _joystickDeltaY = deltaY;
+              });
+            }
+          },
+          onPanEnd: (_) {
+            setState(() {
+              _joystickDeltaX = 0;
+              _joystickDeltaY = 0;
+              _showFloatingJoystick = false;
+              _floatingJoystickPosition = null;
+            });
+          },
+          onPanCancel: () {
+            setState(() {
+              _joystickDeltaX = 0;
+              _joystickDeltaY = 0;
+              _showFloatingJoystick = false;
+              _floatingJoystickPosition = null;
+            });
+          },
+          child: Container(color: Colors.transparent),
+        ),
+      );
+    }
+    
+    // Visible joystick at touch position
+    final joystickSize = min(min(_screenWidth, _screenHeight) * 0.2, 150);
+    return Positioned(
+      left: _floatingJoystickPosition!.dx - joystickSize / 2,
+      top: _floatingJoystickPosition!.dy - joystickSize / 2,
+      child: VirtualJoystick(
+        size: joystickSize,
+        onMove: (deltaX, deltaY) {
+          setState(() {
+            _joystickDeltaX = deltaX;
+            _joystickDeltaY = deltaY;
+          });
+        },
+      ),
+    );
+  }
+
   Widget _buildSettingsModal() {
     return Center(
       child: GestureDetector(
@@ -1040,27 +1118,56 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         Expanded(
           child: ListView(
             children: [
-              // Joystick position toggle
+              // Joystick mode toggle (floating vs fixed)
               ListTile(
                 dense: true,
-                leading: const Icon(Icons.gamepad, size: 20),
+                leading: const Icon(Icons.touch_app, size: 20),
                 title: const Text(
-                  'Joystick Position',
+                  'Floating Joystick',
                   style: TextStyle(fontSize: 14),
                 ),
                 subtitle: Text(
-                  _joystickOnRight ? 'Right' : 'Left',
+                  _joystickFloating ? 'Touch anywhere to use' : 'Fixed position',
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: Switch(
-                  value: _joystickOnRight,
+                  value: _joystickFloating,
                   onChanged: (value) {
                     setState(() {
-                      _joystickOnRight = value;
+                      _joystickFloating = value;
+                      // Reset floating joystick state when switching modes
+                      if (!value) {
+                        _showFloatingJoystick = false;
+                        _floatingJoystickPosition = null;
+                        _joystickDeltaX = 0;
+                        _joystickDeltaY = 0;
+                      }
                     });
                   },
                 ),
               ),
+              // Joystick position toggle (only show if not floating)
+              if (!_joystickFloating)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.gamepad, size: 20),
+                  title: const Text(
+                    'Joystick Position',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    _joystickOnRight ? 'Right' : 'Left',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  trailing: Switch(
+                    value: _joystickOnRight,
+                    onChanged: (value) {
+                      setState(() {
+                        _joystickOnRight = value;
+                      });
+                    },
+                  ),
+                ),
             ],
           ),
         ),
