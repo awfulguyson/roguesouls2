@@ -299,24 +299,39 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       
       final newX = (data['x'] as num).toDouble();
       final newY = (data['y'] as num).toDouble();
+      print('Received player:moved event: $playerId at ($newX, $newY)');
       
       if (_players.containsKey(playerId)) {
-        final oldX = _players[playerId]!.x;
-        final oldY = _players[playerId]!.y;
+        final player = _players[playerId]!;
+        final oldX = player.x;
+        final oldY = player.y;
         
         final dx = newX - oldX;
         final dy = newY - oldY;
         
         // Update direction based on movement
         if (dy != 0) {
-          _players[playerId]!.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
+          player.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
         }
         
         // Set target for interpolation
         _playerTargetPositions[playerId] = Offset(newX, newY);
         _playerLastUpdateTime[playerId] = DateTime.now();
         
-        // Trigger immediate interpolation update to make movement visible
+        // Update position immediately for large movements to make it visible right away
+        final distance = sqrt(dx * dx + dy * dy);
+        if (distance > 5.0) {
+          // For large movements, jump closer immediately
+          player.x = oldX + (dx * 0.5);
+          player.y = oldY + (dy * 0.5);
+        }
+        
+        // Always trigger setState to ensure repaint
+        if (mounted) {
+          setState(() {});
+        }
+        
+        // Trigger immediate interpolation update
         _interpolateOtherPlayers();
       } else {
         setState(() {
@@ -448,11 +463,17 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           player.x = newX;
           player.y = newY;
           needsUpdate = true;
+        } else {
+          // Still mark as needing update if we have a target (to keep animation smooth)
+          if (distance > 0.1) {
+            needsUpdate = true;
+          }
         }
       }
     }
     
-    if (needsUpdate && mounted) {
+    // Always call setState if there are active target positions to ensure smooth animation
+    if ((needsUpdate || _playerTargetPositions.isNotEmpty) && mounted) {
       setState(() {});
     }
   }
