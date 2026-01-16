@@ -412,7 +412,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     if (isUsingJoystick) {
       // Mobile: use joystick input
       deltaX = _joystickDeltaX * _playerSpeed;
-      // Invert Y: joystick negative Y (up on screen) should increase world Y (move up)
+      // Joystick: negative Y (up on screen) should increase world Y (move up toward 5000)
+      // Joystick: positive Y (down on screen) should decrease world Y (move down toward -5000)
       deltaY = -_joystickDeltaY * _playerSpeed;
       
       // Determine direction based on joystick input
@@ -440,26 +441,27 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowUp) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyW)) {
-        deltaY += _playerSpeed; // Up increases Y (player moves up in world, Y increases)
+        deltaY += _playerSpeed; // Up increases Y (player moves up in world, Y increases toward 5000)
         newVerticalDirection = PlayerDirection.up;
       }
       if (_pressedKeys.contains(LogicalKeyboardKey.arrowDown) ||
           _pressedKeys.contains(LogicalKeyboardKey.keyS)) {
-        deltaY -= _playerSpeed; // Down decreases Y (player moves down in world, Y decreases)
+        deltaY -= _playerSpeed; // Down decreases Y (player moves down in world, Y decreases toward -5000)
         newVerticalDirection = PlayerDirection.down;
       }
     }
     
-    // Normalize diagonal movement (so diagonal speed equals horizontal/vertical speed)
-    if (deltaX != 0 && deltaY != 0) {
-      final length = sqrt(deltaX * deltaX + deltaY * deltaY);
-      deltaX = (deltaX / length) * _playerSpeed;
-      deltaY = (deltaY / length) * _playerSpeed;
-      // For diagonal, use the vertical direction for sprite
-      if (newVerticalDirection == null) {
-        newVerticalDirection = deltaY > 0 ? PlayerDirection.down : PlayerDirection.up;
+      // Normalize diagonal movement (so diagonal speed equals horizontal/vertical speed)
+      if (deltaX != 0 && deltaY != 0) {
+        final length = sqrt(deltaX * deltaX + deltaY * deltaY);
+        deltaX = (deltaX / length) * _playerSpeed;
+        deltaY = (deltaY / length) * _playerSpeed;
+        // For diagonal, use the vertical direction for sprite
+        // deltaY > 0 means Y increasing (moving up toward 5000), deltaY < 0 means Y decreasing (moving down toward -5000)
+        if (newVerticalDirection == null) {
+          newVerticalDirection = deltaY > 0 ? PlayerDirection.up : PlayerDirection.down;
+        }
       }
-    }
     
     if (deltaX != 0 || deltaY != 0) {
       setState(() {
