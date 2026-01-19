@@ -145,7 +145,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         setState(() {
           _serverConnected = true;
           _loadingProgress = 0.8;
-          _loadingStatus = 'Initializing account...';
+          if (!_accountInitialized) {
+            _loadingStatus = 'Initializing account...';
+          } else {
+            _loadingStatus = 'Ready!';
+            _loadingProgress = 1.0;
+          }
           _checkLoadingComplete();
         });
       }
@@ -165,6 +170,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         setState(() {
           _serverConnected = true;
           _loadingProgress = 0.8;
+          if (!_accountInitialized) {
+            _loadingStatus = 'Initializing account...';
+          } else {
+            _loadingStatus = 'Ready!';
+            _loadingProgress = 1.0;
+          }
           _checkLoadingComplete();
         });
       }
@@ -235,8 +246,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             _characters = characters;
             _isInitialized = true;
             _accountInitialized = true;
-            _loadingProgress = 1.0;
-            _loadingStatus = 'Ready!';
+            _loadingProgress = 0.9;
+            if (_serverConnected) {
+              _loadingStatus = 'Ready!';
+              _loadingProgress = 1.0;
+            } else {
+              _loadingStatus = 'Connecting to server...';
+            }
             _checkLoadingComplete();
           });
         }
@@ -251,8 +267,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             _characters = characters;
             _isInitialized = true;
             _accountInitialized = true;
-            _loadingProgress = 1.0;
-            _loadingStatus = 'Ready!';
+            _loadingProgress = 0.9;
+            if (_serverConnected) {
+              _loadingStatus = 'Ready!';
+              _loadingProgress = 1.0;
+            } else {
+              _loadingStatus = 'Connecting to server...';
+            }
             _checkLoadingComplete();
           });
         }
@@ -262,7 +283,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         setState(() {
           _isInitialized = true;
           _accountInitialized = true;
-          _loadingProgress = 1.0;
+          _loadingProgress = 0.9;
+          if (_serverConnected) {
+            _loadingStatus = 'Ready!';
+            _loadingProgress = 1.0;
+          } else {
+            _loadingStatus = 'Connecting to server...';
+          }
           _checkLoadingComplete();
         });
       }
@@ -271,6 +298,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   void _checkLoadingComplete() {
     if (_assetsLoaded && _serverConnected && _accountInitialized) {
+      // Ensure "Ready!" status is set
+      if (mounted && _loadingStatus != 'Ready!') {
+        setState(() {
+          _loadingStatus = 'Ready!';
+          _loadingProgress = 1.0;
+        });
+      }
+      
       if (_loadingStartTime == null) return;
       
       final elapsed = DateTime.now().difference(_loadingStartTime!);
