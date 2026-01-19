@@ -737,74 +737,77 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   Widget _buildLoadingScreen() {
     return Positioned.fill(
-      child: Container(
-        color: const Color(0xFF1a237e), // Dark blue background
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Game Title
-              const Text(
-                'RogueSouls',
-                style: TextStyle(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFb8860b), // Dark yellow/gold
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 60),
-              // Loading Bar Container
-              Container(
-                width: min(_screenWidth * 0.7, 400),
-                height: 8,
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.white24, width: 1),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Stack(
-                    children: [
-                      // Animated progress bar
-                      TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 0.0, end: _loadingProgress),
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOut,
-                        builder: (context, value, child) {
-                          return FractionallySizedBox(
-                            widthFactor: value,
-                            alignment: Alignment.centerLeft,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    const Color(0xFFb8860b), // Dark yellow
-                                    const Color(0xFFdaa520), // Goldenrod
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+        child: Container(
+          color: Colors.black.withOpacity(0.5), // Semi-transparent black
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Game Title
+                const Text(
+                  'RogueSouls',
+                  style: TextStyle(
+                    fontSize: 48,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFb8860b), // Dark yellow/gold
+                    letterSpacing: 2,
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              // Loading Status Text
-              Text(
-                _loadingStatus,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.white70,
-                  letterSpacing: 0.5,
+                const SizedBox(height: 60),
+                // Loading Bar Container
+                Container(
+                  width: min(_screenWidth * 0.7, 400),
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.white24, width: 1),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Stack(
+                      children: [
+                        // Animated progress bar
+                        TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.0, end: _loadingProgress),
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOut,
+                          builder: (context, value, child) {
+                            return FractionallySizedBox(
+                              widthFactor: value,
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      const Color(0xFFb8860b), // Dark yellow
+                                      const Color(0xFFdaa520), // Goldenrod
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+                // Loading Status Text
+                Text(
+                  _loadingStatus,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
