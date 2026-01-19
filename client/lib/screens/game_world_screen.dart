@@ -805,6 +805,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     fontSize: 16,
                     color: Colors.white70,
                     letterSpacing: 0.5,
+                    decoration: TextDecoration.none,
                   ),
                 ),
               ],
