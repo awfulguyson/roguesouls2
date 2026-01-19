@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/game_service.dart';
@@ -146,8 +147,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         setState(() {
           _serverConnected = true; // Allow game to proceed
           _loadingStatus = 'Server connection timeout - continuing offline';
-          _checkLoadingComplete();
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _checkLoadingComplete());
       }
     });
     
@@ -156,24 +157,38 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _gameService.socket?.emit('game:requestPlayers');
       _gameService.requestEnemies();
       
-      if (mounted) {
-        setState(() {
-          _serverConnected = true;
-          _loadingProgress = 0.8;
-          if (!_accountInitialized) {
-            _loadingStatus = 'Initializing account...';
-          } else {
-            _loadingStatus = 'Ready!';
-            _loadingProgress = 1.0;
-          }
-          _checkLoadingComplete();
-        });
-      }
-      
-      if (_currentCharacterId != null) {
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _joinGameWithCharacter();
-        });
+      if (!mounted) return;
+      try {
+        void updateConnection() {
+          if (!mounted) return;
+          setState(() {
+            _serverConnected = true;
+            _loadingProgress = 0.8;
+            if (!_accountInitialized) {
+              _loadingStatus = 'Initializing account...';
+            } else {
+              _loadingStatus = 'Ready!';
+              _loadingProgress = 1.0;
+            }
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) => _checkLoadingComplete());
+        }
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => updateConnection());
+        } else {
+          updateConnection();
+        }
+        
+        if (_currentCharacterId != null) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _joinGameWithCharacter();
+            }
+          });
+        }
+      } catch (e) {
+        print('Error in socket connect callback: $e');
       }
     });
     
@@ -182,24 +197,38 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _gameService.socket?.emit('game:requestPlayers');
       _gameService.requestEnemies();
       
-      if (mounted) {
-        setState(() {
-          _serverConnected = true;
-          _loadingProgress = 0.8;
-          if (!_accountInitialized) {
-            _loadingStatus = 'Initializing account...';
-          } else {
-            _loadingStatus = 'Ready!';
-            _loadingProgress = 1.0;
-          }
-          _checkLoadingComplete();
-        });
-      }
-      
-      if (_currentCharacterId != null) {
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _joinGameWithCharacter();
-        });
+      if (!mounted) return;
+      try {
+        void updateConnection() {
+          if (!mounted) return;
+          setState(() {
+            _serverConnected = true;
+            _loadingProgress = 0.8;
+            if (!_accountInitialized) {
+              _loadingStatus = 'Initializing account...';
+            } else {
+              _loadingStatus = 'Ready!';
+              _loadingProgress = 1.0;
+            }
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) => _checkLoadingComplete());
+        }
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => updateConnection());
+        } else {
+          updateConnection();
+        }
+        
+        if (_currentCharacterId != null) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              _joinGameWithCharacter();
+            }
+          });
+        }
+      } catch (e) {
+        print('Error in socket reconnect callback: $e');
       }
     });
     
@@ -264,7 +293,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       if (widget.accountId != null) {
         final accountId = widget.accountId!;
         final characters = await _apiService.getCharacters(accountId);
-        if (mounted) {
+        if (!mounted) return;
+        
+        void updateAccount() {
+          if (!mounted) return;
           setState(() {
             _accountId = accountId;
             _characters = characters;
@@ -277,15 +309,24 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             } else {
               _loadingStatus = 'Connecting to server...';
             }
-            _checkLoadingComplete();
           });
+          WidgetsBinding.instance.addPostFrameCallback((_) => _checkLoadingComplete());
+        }
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => updateAccount());
+        } else {
+          updateAccount();
         }
       } else {
         final account = await _apiService.createTemporaryAccount();
         final accountId = account['id'] as String;
         final characters = await _apiService.getCharacters(accountId);
         
-        if (mounted) {
+        if (!mounted) return;
+        
+        void updateAccount() {
+          if (!mounted) return;
           setState(() {
             _accountId = accountId;
             _characters = characters;
@@ -298,12 +339,21 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             } else {
               _loadingStatus = 'Connecting to server...';
             }
-            _checkLoadingComplete();
           });
+          _checkLoadingComplete();
+        }
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => updateAccount());
+        } else {
+          updateAccount();
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (!mounted) return;
+      
+      void updateAccountError() {
+        if (!mounted) return;
         setState(() {
           _isInitialized = true;
           _accountInitialized = true;
@@ -314,41 +364,75 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           } else {
             _loadingStatus = 'Connecting to server...';
           }
-          _checkLoadingComplete();
         });
+        // Defer check after setState completes
+        WidgetsBinding.instance.addPostFrameCallback((_) => _checkLoadingComplete());
+      }
+      
+      if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => updateAccountError());
+      } else {
+        updateAccountError();
       }
     }
   }
 
   void _checkLoadingComplete() {
-    if (_assetsLoaded && _serverConnected && _accountInitialized) {
-      // Ensure "Ready!" status is set
-      if (mounted && _loadingStatus != 'Ready!') {
-        setState(() {
-          _loadingStatus = 'Ready!';
-          _loadingProgress = 1.0;
+    // Always defer this check to avoid calling setState during a build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      
+      if (_assetsLoaded && _serverConnected && _accountInitialized) {
+        // Ensure "Ready!" status is set
+        if (_loadingStatus != 'Ready!') {
+          try {
+            if (mounted) {
+              setState(() {
+                _loadingStatus = 'Ready!';
+                _loadingProgress = 1.0;
+              });
+            }
+          } catch (e) {
+            print('Error updating loading status: $e');
+          }
+        }
+        
+        if (_loadingStartTime == null) return;
+        
+        final elapsed = DateTime.now().difference(_loadingStartTime!);
+        final minimumDisplayTime = const Duration(seconds: 1);
+        final remainingTime = minimumDisplayTime - elapsed;
+        
+        // Wait for minimum 1 second, or show "Ready!" for at least 500ms
+        final delay = remainingTime.isNegative 
+            ? const Duration(milliseconds: 500)
+            : remainingTime + const Duration(milliseconds: 500);
+        
+        Future.delayed(delay, () {
+          if (!mounted) return;
+          try {
+            if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() {
+                    _isLoading = false;
+                  });
+                }
+              });
+            } else {
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                });
+              }
+            }
+          } catch (e, stackTrace) {
+            print('Error hiding loading screen: $e');
+            print('Stack trace: $stackTrace');
+          }
         });
       }
-      
-      if (_loadingStartTime == null) return;
-      
-      final elapsed = DateTime.now().difference(_loadingStartTime!);
-      final minimumDisplayTime = const Duration(seconds: 1);
-      final remainingTime = minimumDisplayTime - elapsed;
-      
-      // Wait for minimum 1 second, or show "Ready!" for at least 500ms
-      final delay = remainingTime.isNegative 
-          ? const Duration(milliseconds: 500)
-          : remainingTime + const Duration(milliseconds: 500);
-      
-      Future.delayed(delay, () {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-      });
-    }
+    });
   }
 
   Future<void> _loadSprites() async {
@@ -419,214 +503,356 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         _assetsLoaded = true;
         _loadingProgress = 0.6;
         _loadingStatus = 'Connecting to server...';
-        _checkLoadingComplete();
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkLoadingComplete());
     }
   }
 
   void _setupGameService() {
     _playersListCallback = (players) {
-      print('onPlayersList called with ${players.length} players, characterId: $_currentCharacterId');
       if (!mounted) {
-        print('Skipping: not mounted');
         return;
       }
-      setState(() {
-        _players.clear();
-        for (var playerData in players) {
-          print('Processing player: $playerData');
-          final player = Player.fromJson(playerData as Map<String, dynamic>);
-          print('Parsed player: id=${player.id}, name=${player.name}, x=${player.x}, y=${player.y}');
-          if (_currentCharacterId == null || player.id != _currentCharacterId) {
-            print('Adding player to map: ${player.id}');
-            _players[player.id] = player;
-          } else {
-            print('Skipping self: ${player.id}');
-          }
+      try {
+        void updatePlayers() {
+          if (!mounted) return;
+          setState(() {
+            _players.clear();
+            for (var playerData in players) {
+              try {
+                final data = playerData as Map<String, dynamic>?;
+                if (data == null) continue;
+                
+                final player = Player.fromJson(data);
+                if (_currentCharacterId == null || player.id != _currentCharacterId) {
+                  _players[player.id] = player;
+                }
+              } catch (e, stackTrace) {
+                print('Error parsing player from JSON in players list: $e');
+                print('Stack trace: $stackTrace');
+              }
+            }
+          });
         }
-        print('Total players in map: ${_players.length}');
-      });
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          // Defer setState if we're in a build phase
+          WidgetsBinding.instance.addPostFrameCallback((_) => updatePlayers());
+        } else {
+          updatePlayers();
+        }
+      } catch (e, stackTrace) {
+        print('Error in players list callback: $e');
+        print('Stack trace: $stackTrace');
+      }
     };
     _gameService.addPlayersListListener(_playersListCallback);
 
     _playerJoinedCallback = (data) {
-      print('onPlayerJoined called: $data, characterId: $_currentCharacterId');
       if (!mounted) {
-        print('Skipping: not mounted');
         return;
       }
-      setState(() {
-        final player = Player.fromJson(data);
-        print('Parsed joined player: id=${player.id}, name=${player.name}');
-        if (_currentCharacterId == null || player.id != _currentCharacterId) {
-          print('Adding joined player to map: ${player.id}');
-          _players[player.id] = player;
-        } else {
-          print('Skipping self (joined): ${player.id}');
+      try {
+        void updatePlayer() {
+          if (!mounted) return;
+          setState(() {
+            try {
+              final player = Player.fromJson(data);
+              if (_currentCharacterId == null || player.id != _currentCharacterId) {
+                _players[player.id] = player;
+              }
+            } catch (e) {
+              print('Error parsing player from JSON: $e');
+            }
+          });
         }
-        print('Total players in map after join: ${_players.length}');
-      });
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => updatePlayer());
+        } else {
+          updatePlayer();
+        }
+      } catch (e) {
+        print('Error in player joined callback: $e');
+      }
     };
     _gameService.addPlayerJoinedListener(_playerJoinedCallback);
 
     _playerMovedCallback = (data) {
       if (!mounted) return;
-      final playerId = data['id'] as String;
-      if (_currentCharacterId != null && playerId == _currentCharacterId) {
-        return;
-      }
-      
-      final newX = (data['x'] as num).toDouble();
-      final newY = (data['y'] as num).toDouble();
-      
-      if (_players.containsKey(playerId)) {
-        setState(() {
-          final player = _players[playerId]!;
-          final oldX = player.x;
-          final oldY = player.y;
-          
-          final dx = newX - oldX;
-          final dy = newY - oldY;
-          
-          // Update direction based on movement
-          if (dy != 0) {
-            player.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
-          }
-          
-          // Set target for interpolation
-          _playerTargetPositions[playerId] = Offset(newX, newY);
-          _playerLastUpdateTime[playerId] = DateTime.now();
-          
-          // Always update position immediately to make movement visible
-          // For large movements, jump closer immediately; for small movements, update fully
-          final distance = sqrt(dx * dx + dy * dy);
-          if (distance > 5.0) {
-            // For large movements, jump closer immediately
-            player.x = oldX + (dx * 0.5);
-            player.y = oldY + (dy * 0.5);
+      try {
+        final playerId = data['id'] as String?;
+        if (playerId == null || playerId.isEmpty) return;
+        if (_currentCharacterId != null && playerId == _currentCharacterId) {
+          return;
+        }
+        
+        final newX = ((data['x'] as num?) ?? 0).toDouble();
+        final newY = ((data['y'] as num?) ?? 0).toDouble();
+        
+        if (newX.isNaN || newY.isNaN) return;
+        
+        void updatePlayer() {
+          if (!mounted) return;
+          if (_players.containsKey(playerId)) {
+            setState(() {
+              final player = _players[playerId]!;
+              final oldX = player.x;
+              final oldY = player.y;
+              
+              final dx = newX - oldX;
+              final dy = newY - oldY;
+              
+              // Update direction based on movement
+              if (dy != 0) {
+                player.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
+              }
+              
+              // Set target for interpolation
+              _playerTargetPositions[playerId] = Offset(newX, newY);
+              _playerLastUpdateTime[playerId] = DateTime.now();
+              
+              // Always update position immediately to make movement visible
+              // For large movements, jump closer immediately; for small movements, update fully
+              final distance = sqrt(dx * dx + dy * dy);
+              if (distance > 5.0) {
+                // For large movements, jump closer immediately
+                player.x = oldX + (dx * 0.5);
+                player.y = oldY + (dy * 0.5);
+              } else {
+                // For small movements, update to target immediately to ensure visibility
+                player.x = newX;
+                player.y = newY;
+                // Remove from interpolation since we're already at target
+                _playerTargetPositions.remove(playerId);
+              }
+              _repaintCounter++;
+            });
           } else {
-            // For small movements, update to target immediately to ensure visibility
-            player.x = newX;
-            player.y = newY;
-            // Remove from interpolation since we're already at target
-            _playerTargetPositions.remove(playerId);
+            setState(() {
+              try {
+                final player = Player.fromJson(data);
+                player.x = newX;
+                player.y = newY;
+                _players[playerId] = player;
+                _playerTargetPositions[playerId] = Offset(newX, newY);
+                _playerLastUpdateTime[playerId] = DateTime.now();
+              } catch (e) {
+                print('Error parsing player from JSON in move callback: $e');
+              }
+            });
           }
-          _repaintCounter++;
-        });
-      } else {
-        setState(() {
-          final player = Player.fromJson(data);
-          player.x = newX;
-          player.y = newY;
-          _players[playerId] = player;
-          _playerTargetPositions[playerId] = Offset(newX, newY);
-          _playerLastUpdateTime[playerId] = DateTime.now();
-        });
+        }
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => updatePlayer());
+        } else {
+          updatePlayer();
+        }
+      } catch (e, stackTrace) {
+        print('Error in player moved callback: $e');
+        print('Stack trace: $stackTrace');
       }
     };
     _gameService.addPlayerMovedListener(_playerMovedCallback);
 
     _playerLeftCallback = (data) {
       if (!mounted) return;
-      setState(() {
-        _players.remove(data['id'] as String);
-      });
+      try {
+        final playerId = data['id'] as String?;
+        if (playerId == null || playerId.isEmpty) return;
+        
+        void removePlayer() {
+          if (!mounted) return;
+          setState(() {
+            _players.remove(playerId);
+          });
+        }
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => removePlayer());
+        } else {
+          removePlayer();
+        }
+      } catch (e) {
+        print('Error in player left callback: $e');
+      }
     };
     _gameService.addPlayerLeftListener(_playerLeftCallback);
 
     _enemiesListCallback = (enemiesList) {
       if (!mounted) return;
-      setState(() {
-        _enemies.clear();
-        for (var enemyData in enemiesList) {
-          final data = enemyData as Map<String, dynamic>;
-          final enemy = Enemy(
-            id: data['id'] as String,
-            x: (data['x'] as num).toDouble(),
-            y: (data['y'] as num).toDouble(),
-            maxHp: (data['maxHp'] as num).toDouble(),
-            currentHp: (data['currentHp'] as num).toDouble(),
-            isAggroed: data['isAggroed'] as bool? ?? false,
-            spriteType: data['spriteType'] as String?,
-            direction: _directionFromString(data['direction'] as String? ?? 'down'),
-          );
-          _enemies[enemy.id] = enemy;
+      try {
+        void updateEnemies() {
+          if (!mounted) return;
+          setState(() {
+            _enemies.clear();
+            for (var enemyData in enemiesList) {
+              try {
+                final data = enemyData as Map<String, dynamic>?;
+                if (data == null) continue;
+                
+                final enemy = Enemy(
+                  id: data['id'] as String? ?? 'unknown',
+                  x: ((data['x'] as num?) ?? 0).toDouble(),
+                  y: ((data['y'] as num?) ?? 0).toDouble(),
+                  maxHp: ((data['maxHp'] as num?) ?? 100).toDouble(),
+                  currentHp: ((data['currentHp'] as num?) ?? 100).toDouble(),
+                  isAggroed: data['isAggroed'] as bool? ?? false,
+                  spriteType: data['spriteType'] as String?,
+                  direction: _directionFromString(data['direction'] as String? ?? 'down'),
+                );
+                if (enemy.id != 'unknown') {
+                  _enemies[enemy.id] = enemy;
+                }
+              } catch (e, stackTrace) {
+                print('Error creating enemy from data: $e');
+                print('Stack trace: $stackTrace');
+              }
+            }
+            _repaintCounter++;
+          });
         }
-        _repaintCounter++;
-      });
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          // Defer setState if we're in a build phase
+          WidgetsBinding.instance.addPostFrameCallback((_) => updateEnemies());
+        } else {
+          updateEnemies();
+        }
+      } catch (e, stackTrace) {
+        print('Error in enemies list callback: $e');
+        print('Stack trace: $stackTrace');
+      }
     };
     _gameService.addEnemiesListListener(_enemiesListCallback);
 
     _enemyUpdatedCallback = (data) {
       if (!mounted) return;
-      final enemyId = data['id'] as String;
-      if (_enemies.containsKey(enemyId)) {
-        setState(() {
-          final enemy = _enemies[enemyId]!;
-          final oldY = enemy.y;
-          enemy.x = (data['x'] as num).toDouble();
-          enemy.y = (data['y'] as num).toDouble();
-          enemy.currentHp = (data['currentHp'] as num).toDouble();
-          enemy.maxHp = (data['maxHp'] as num).toDouble();
-          enemy.isAggroed = data['isAggroed'] as bool? ?? false;
-          if (data['spriteType'] != null) {
-            enemy.spriteType = data['spriteType'] as String;
-          }
-          if (data['direction'] != null) {
-            enemy.direction = _directionFromString(data['direction'] as String);
+      try {
+        final enemyId = data['id'] as String?;
+        if (enemyId == null || enemyId.isEmpty) return;
+        
+        void updateEnemy() {
+          if (!mounted) return;
+          if (_enemies.containsKey(enemyId)) {
+            setState(() {
+              final enemy = _enemies[enemyId]!;
+              final oldY = enemy.y;
+              enemy.x = ((data['x'] as num?) ?? enemy.x).toDouble();
+              enemy.y = ((data['y'] as num?) ?? enemy.y).toDouble();
+              enemy.currentHp = ((data['currentHp'] as num?) ?? enemy.currentHp).toDouble();
+              enemy.maxHp = ((data['maxHp'] as num?) ?? enemy.maxHp).toDouble();
+              enemy.isAggroed = data['isAggroed'] as bool? ?? enemy.isAggroed;
+              if (data['spriteType'] != null) {
+                enemy.spriteType = data['spriteType'] as String;
+              }
+              if (data['direction'] != null) {
+                try {
+                  enemy.direction = _directionFromString(data['direction'] as String);
+                } catch (e) {
+                  // Fallback to direction based on movement if direction string is invalid
+                  final dy = enemy.y - oldY;
+                  if (dy != 0) {
+                    enemy.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
+                  }
+                }
+              } else {
+                // Update direction based on Y movement
+                final dy = enemy.y - oldY;
+                if (dy != 0) {
+                  enemy.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
+                }
+              }
+              _repaintCounter++;
+            });
           } else {
-            // Update direction based on Y movement
-            final dy = enemy.y - oldY;
-            if (dy != 0) {
-              enemy.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
-            }
+            // New enemy
+            setState(() {
+              final enemy = Enemy(
+                id: enemyId,
+                x: ((data['x'] as num?) ?? 0).toDouble(),
+                y: ((data['y'] as num?) ?? 0).toDouble(),
+                maxHp: ((data['maxHp'] as num?) ?? 100).toDouble(),
+                currentHp: ((data['currentHp'] as num?) ?? 100).toDouble(),
+                isAggroed: data['isAggroed'] as bool? ?? false,
+                spriteType: data['spriteType'] as String?,
+                direction: _directionFromString(data['direction'] as String? ?? 'down'),
+              );
+              _enemies[enemyId] = enemy;
+              _repaintCounter++;
+            });
           }
-          _repaintCounter++;
-        });
-      } else {
-        // New enemy
-        setState(() {
-          final enemy = Enemy(
-            id: enemyId,
-            x: (data['x'] as num).toDouble(),
-            y: (data['y'] as num).toDouble(),
-            maxHp: (data['maxHp'] as num).toDouble(),
-            currentHp: (data['currentHp'] as num).toDouble(),
-            isAggroed: data['isAggroed'] as bool? ?? false,
-            spriteType: data['spriteType'] as String?,
-            direction: _directionFromString(data['direction'] as String? ?? 'down'),
-          );
-          _enemies[enemyId] = enemy;
-          _repaintCounter++;
-        });
+        }
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          // Defer setState if we're in a build phase
+          WidgetsBinding.instance.addPostFrameCallback((_) => updateEnemy());
+        } else {
+          updateEnemy();
+        }
+      } catch (e, stackTrace) {
+        print('Error updating enemy: $e');
+        print('Stack trace: $stackTrace');
       }
     };
     _gameService.addEnemyUpdatedListener(_enemyUpdatedCallback);
 
     _enemyRemovedCallback = (data) {
       if (!mounted) return;
-      final enemyId = data['id'] as String;
-      setState(() {
-        _enemies.remove(enemyId);
-        if (_targetedEnemyId == enemyId) {
-          _targetedEnemyId = null;
+      try {
+        final enemyId = data['id'] as String?;
+        if (enemyId == null || enemyId.isEmpty) return;
+        
+        if (WidgetsBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+          // Defer setState if we're in a build phase
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _enemies.remove(enemyId);
+                if (_targetedEnemyId == enemyId) {
+                  _targetedEnemyId = null;
+                }
+                _repaintCounter++;
+              });
+            }
+          });
+        } else {
+          setState(() {
+            _enemies.remove(enemyId);
+            if (_targetedEnemyId == enemyId) {
+              _targetedEnemyId = null;
+            }
+            _repaintCounter++;
+          });
         }
-        _repaintCounter++;
-      });
+      } catch (e, stackTrace) {
+        print('Error removing enemy: $e');
+        print('Stack trace: $stackTrace');
+      }
     };
     _gameService.addEnemyRemovedListener(_enemyRemovedCallback);
   }
 
-  PlayerDirection _directionFromString(String dir) {
-    switch (dir.toLowerCase()) {
-      case 'up':
-        return PlayerDirection.up;
-      case 'left':
-        return PlayerDirection.left;
-      case 'right':
-        return PlayerDirection.right;
-      default:
-        return PlayerDirection.down;
+  PlayerDirection _directionFromString(String? dir) {
+    if (dir == null || dir.isEmpty) {
+      return PlayerDirection.down;
+    }
+    try {
+      switch (dir.toLowerCase().trim()) {
+        case 'up':
+          return PlayerDirection.up;
+        case 'left':
+          return PlayerDirection.left;
+        case 'right':
+          return PlayerDirection.right;
+        case 'down':
+          return PlayerDirection.down;
+        default:
+          return PlayerDirection.down;
+      }
+    } catch (e) {
+      return PlayerDirection.down;
     }
   }
 
@@ -2310,30 +2536,62 @@ class GameWorldPainter extends CustomPainter {
 
   void _drawSprite(
     Canvas canvas,
-    ui.Image sprite,
+    ui.Image? sprite,
     double worldX,
     double worldY,
     double size,
     PlayerDirection direction,
   ) {
+    if (sprite == null) return;
+    
+    // Validate sprite dimensions
+    if (sprite.width <= 0 || sprite.height <= 0) return;
+    
+    // Ensure sprite is at least 1024x512 for up/down directions
+    final spriteWidth = sprite.width.toDouble();
+    final spriteHeight = sprite.height.toDouble();
+    
     Rect sourceRect;
     if (direction == PlayerDirection.down) {
-      sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
+      sourceRect = Rect.fromLTWH(0, 0, spriteWidth >= 512 ? 512 : spriteWidth, spriteHeight >= 512 ? 512 : spriteHeight);
     } else if (direction == PlayerDirection.up) {
-      sourceRect = const Rect.fromLTWH(512, 0, 512, 512);
+      // For up direction, use the right half if sprite is wide enough, otherwise use the left half
+      if (spriteWidth >= 1024) {
+        sourceRect = Rect.fromLTWH(512, 0, 512, spriteHeight >= 512 ? 512 : spriteHeight);
+      } else {
+        // Fallback to left half if sprite is not wide enough
+        sourceRect = Rect.fromLTWH(0, 0, spriteWidth >= 512 ? 512 : spriteWidth, spriteHeight >= 512 ? 512 : spriteHeight);
+      }
     } else {
-      sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
+      sourceRect = Rect.fromLTWH(0, 0, spriteWidth >= 512 ? 512 : spriteWidth, spriteHeight >= 512 ? 512 : spriteHeight);
     }
+    
+    // Clamp sourceRect to sprite bounds
+    sourceRect = Rect.fromLTWH(
+      sourceRect.left.clamp(0.0, spriteWidth),
+      sourceRect.top.clamp(0.0, spriteHeight),
+      sourceRect.width.clamp(0.0, spriteWidth - sourceRect.left),
+      sourceRect.height.clamp(0.0, spriteHeight - sourceRect.top),
+    );
 
     final screenX = worldToScreenX(worldX);
     final screenY = worldToScreenY(worldY);
+    
+    // Validate screen coordinates
+    if (screenX.isNaN || screenY.isNaN || size.isNaN || size <= 0) return;
     
     final destRect = Rect.fromCenter(
       center: Offset(screenX, screenY),
       width: size,
       height: size,
     );
-    canvas.drawImageRect(sprite, sourceRect, destRect, Paint());
+    
+    try {
+      canvas.drawImageRect(sprite, sourceRect, destRect, Paint());
+    } catch (e) {
+      // Silently fail if drawing fails
+      print('Error drawing sprite: $e');
+    }
   }
 
   ui.Image? _getSpriteForType(String spriteType) {
@@ -2346,12 +2604,13 @@ class GameWorldPainter extends CustomPainter {
   }
 
   ui.Image? _getEnemySpriteForType(String? spriteType) {
-    if (spriteType == 'enemy-1') {
+    if (spriteType == 'enemy-1' && enemy1Sprite != null) {
       return enemy1Sprite;
-    } else if (spriteType == 'enemy-2') {
+    } else if (spriteType == 'enemy-2' && enemy2Sprite != null) {
       return enemy2Sprite;
     }
-    return enemy1Sprite;
+    // Return first available sprite, or null if neither is loaded
+    return enemy1Sprite ?? enemy2Sprite;
   }
 
   @override
@@ -2407,38 +2666,53 @@ class GameWorldPainter extends CustomPainter {
     
     for (var player in players.values) {
       if (player.id != currentPlayerId) {
-        final playerSpriteType = player.spriteType ?? 'char-2';
-        final sprite = _getSpriteForType(playerSpriteType);
-        
-        if (sprite != null) {
-          _drawSprite(canvas, sprite, player.x, player.y, playerSize, player.direction);
-        } else {
+        try {
+          // Validate player properties
+          if (player.x.isNaN || player.y.isNaN) continue;
+          
+          final playerSpriteType = player.spriteType ?? 'char-2';
+          final sprite = _getSpriteForType(playerSpriteType);
+          
+          if (sprite != null) {
+            final playerDirection = player.direction ?? PlayerDirection.down;
+            _drawSprite(canvas, sprite, player.x, player.y, playerSize, playerDirection);
+          } else {
+            final screenX = worldToScreenX(player.x);
+            final screenY = worldToScreenY(player.y);
+            
+            if (screenX.isNaN || screenY.isNaN) continue;
+            
+            final paint = Paint()..color = Colors.blue;
+            canvas.drawRect(
+              Rect.fromCenter(
+                center: Offset(screenX, screenY),
+                width: playerSize,
+                height: playerSize,
+              ),
+              paint,
+            );
+          }
+          
           final screenX = worldToScreenX(player.x);
           final screenY = worldToScreenY(player.y);
-          final paint = Paint()..color = Colors.blue;
-          canvas.drawRect(
-            Rect.fromCenter(
-              center: Offset(screenX, screenY),
-              width: playerSize,
-              height: playerSize,
+          
+          if (screenX.isNaN || screenY.isNaN) continue;
+          
+          final fontSize = playerSize * 0.1;
+          final textPainter = TextPainter(
+            text: TextSpan(
+              text: player.name ?? '',
+              style: TextStyle(color: Colors.black, fontSize: fontSize),
             ),
-            paint,
+            textDirection: TextDirection.ltr,
           );
+          textPainter.layout();
+          final textX = screenX - textPainter.width / 2;
+          textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
+        } catch (e) {
+          // Skip rendering this player if there's an error
+          print('Error rendering player ${player.id}: $e');
         }
-        
-        final screenX = worldToScreenX(player.x);
-        final screenY = worldToScreenY(player.y);
-        final fontSize = playerSize * 0.1;
-        final textPainter = TextPainter(
-          text: TextSpan(
-            text: player.name,
-            style: TextStyle(color: Colors.black, fontSize: fontSize),
-          ),
-          textDirection: TextDirection.ltr,
-        );
-        textPainter.layout();
-        final textX = screenX - textPainter.width / 2;
-        textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
       }
     }
 
@@ -2477,61 +2751,75 @@ class GameWorldPainter extends CustomPainter {
     
     // Draw enemies
     for (var enemy in enemies.values) {
-      if (!enemy.isAlive) continue;
+      if (enemy == null) continue;
+      if (!enemy.isAlive || enemy.size <= 0) continue;
       
-      final screenX = worldToScreenX(enemy.x);
-      final screenY = worldToScreenY(enemy.y);
-      final enemySize = enemy.size;
+      try {
+        // Validate enemy properties
+        if (enemy.x.isNaN || enemy.y.isNaN || enemy.size.isNaN) continue;
+        if (enemy.maxHp.isNaN || enemy.currentHp.isNaN) continue;
+        
+        final screenX = worldToScreenX(enemy.x);
+        final screenY = worldToScreenY(enemy.y);
+        final enemySize = enemy.size;
+        
+        if (screenX.isNaN || screenY.isNaN || enemySize.isNaN) continue;
+        
+        // Draw enemy sprite
+        final enemySprite = _getEnemySpriteForType(enemy.spriteType);
+        if (enemySprite != null) {
+          final enemyDirection = enemy.direction ?? PlayerDirection.down;
+          _drawSprite(canvas, enemySprite, enemy.x, enemy.y, enemySize, enemyDirection);
+        } else {
+          // Fallback to red rectangle if sprite not loaded
+          final enemyPaint = Paint()..color = Colors.red;
+          canvas.drawRect(
+            Rect.fromCenter(
+              center: Offset(screenX, screenY),
+              width: enemySize,
+              height: enemySize,
+            ),
+            enemyPaint,
+          );
+        }
+        
+        // Draw HP bar
+        final hpBarWidth = enemySize;
+        final hpBarHeight = 6.0;
+        final hpBarY = screenY - enemySize / 2 - 15;
+        final hpPercent = enemy.maxHp > 0 ? (enemy.currentHp.clamp(0.0, enemy.maxHp) / enemy.maxHp) : 0.0;
       
-      // Draw enemy sprite
-      final enemySprite = _getEnemySpriteForType(enemy.spriteType);
-      if (enemySprite != null) {
-        _drawSprite(canvas, enemySprite, enemy.x, enemy.y, enemySize, enemy.direction);
-      } else {
-        // Fallback to red rectangle if sprite not loaded
-        final enemyPaint = Paint()..color = Colors.red;
+        // Background
         canvas.drawRect(
-          Rect.fromCenter(
-            center: Offset(screenX, screenY),
-            width: enemySize,
-            height: enemySize,
-          ),
-          enemyPaint,
+          Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth, hpBarHeight),
+          Paint()..color = Colors.black54,
         );
-      }
-      
-      // Draw HP bar
-      final hpBarWidth = enemySize;
-      final hpBarHeight = 6.0;
-      final hpBarY = screenY - enemySize / 2 - 15;
-      final hpPercent = enemy.currentHp / enemy.maxHp;
-      
-      // Background
-      canvas.drawRect(
-        Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth, hpBarHeight),
-        Paint()..color = Colors.black54,
-      );
-      
-      // HP bar
-      canvas.drawRect(
-        Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth * hpPercent, hpBarHeight),
-        Paint()..color = hpPercent > 0.5 ? Colors.green : (hpPercent > 0.25 ? Colors.orange : Colors.red),
-      );
-      
-      // Draw targeting indicator if targeted
-      if (targetedEnemyId == enemy.id) {
-        final indicatorPaint = Paint()
-          ..color = Colors.yellow
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0;
+        
+        // HP bar
         canvas.drawRect(
-          Rect.fromCenter(
-            center: Offset(screenX, screenY),
-            width: enemySize + 10,
-            height: enemySize + 10,
-          ),
-          indicatorPaint,
+          Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth * hpPercent, hpBarHeight),
+          Paint()..color = hpPercent > 0.5 ? Colors.green : (hpPercent > 0.25 ? Colors.orange : Colors.red),
         );
+        
+        // Draw targeting indicator if targeted
+        if (targetedEnemyId == enemy.id) {
+          final indicatorPaint = Paint()
+            ..color = Colors.yellow
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3.0;
+          canvas.drawRect(
+            Rect.fromCenter(
+              center: Offset(screenX, screenY),
+              width: enemySize + 10,
+              height: enemySize + 10,
+            ),
+            indicatorPaint,
+          );
+        }
+      } catch (e, stackTrace) {
+        // Skip rendering this enemy if there's an error
+        print('Error rendering enemy ${enemy.id}: $e');
+        print('Stack trace: $stackTrace');
       }
     }
     
@@ -2539,15 +2827,24 @@ class GameWorldPainter extends CustomPainter {
     for (var projectile in projectiles.values) {
       if (!projectile.isActive) continue;
       
-      final screenX = worldToScreenX(projectile.x);
-      final screenY = worldToScreenY(projectile.y);
-      
-      final projectilePaint = Paint()..color = Colors.yellow;
-      canvas.drawCircle(
-        Offset(screenX, screenY),
-        5.0,
-        projectilePaint,
-      );
+      try {
+        if (projectile.x.isNaN || projectile.y.isNaN) continue;
+        
+        final screenX = worldToScreenX(projectile.x);
+        final screenY = worldToScreenY(projectile.y);
+        
+        if (screenX.isNaN || screenY.isNaN) continue;
+        
+        final projectilePaint = Paint()..color = Colors.yellow;
+        canvas.drawCircle(
+          Offset(screenX, screenY),
+          5.0,
+          projectilePaint,
+        );
+      } catch (e) {
+        // Skip rendering this projectile if there's an error
+        print('Error rendering projectile ${projectile.id}: $e');
+      }
     }
     
     // Draw player HP bar
@@ -2556,7 +2853,7 @@ class GameWorldPainter extends CustomPainter {
       final hpBarHeight = 20.0;
       final hpBarX = 20.0;
       final hpBarY = size.height - 40.0;
-      final hpPercent = playerHp / playerMaxHp;
+      final hpPercent = playerMaxHp > 0 ? (playerHp.clamp(0.0, playerMaxHp) / playerMaxHp) : 0.0;
       
       // Background
       canvas.drawRect(
@@ -2628,7 +2925,9 @@ class GameWorldPainter extends CustomPainter {
       }
       if ((oldEnemy.x - newEnemy.x).abs() > 0.01 ||
           (oldEnemy.y - newEnemy.y).abs() > 0.01 ||
-          (oldEnemy.currentHp - newEnemy.currentHp).abs() > 0.1) {
+          (oldEnemy.currentHp - newEnemy.currentHp).abs() > 0.1 ||
+          oldEnemy.direction != newEnemy.direction ||
+          oldEnemy.spriteType != newEnemy.spriteType) {
         return true;
       }
     }
@@ -2650,7 +2949,9 @@ class GameWorldPainter extends CustomPainter {
         oldDelegate.currentPlayerDirection != currentPlayerDirection ||
         oldDelegate.currentPlayerSpriteType != currentPlayerSpriteType ||
         oldDelegate.char1Sprite != char1Sprite ||
-        oldDelegate.char2Sprite != char2Sprite;
+        oldDelegate.char2Sprite != char2Sprite ||
+        oldDelegate.enemy1Sprite != enemy1Sprite ||
+        oldDelegate.enemy2Sprite != enemy2Sprite;
   }
 }
 

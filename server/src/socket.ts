@@ -175,6 +175,8 @@ export function setupSocketIO(io: Server) {
           currentHp: enemy.currentHp,
           maxHp: enemy.maxHp,
           isAggroed: enemy.isAggroed,
+          spriteType: enemy.spriteType,
+          direction: enemy.direction,
         });
         
         // Remove enemy if dead
