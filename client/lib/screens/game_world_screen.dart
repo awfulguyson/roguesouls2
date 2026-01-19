@@ -753,6 +753,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     fontWeight: FontWeight.bold,
                     color: Color(0xFFb8860b), // Dark yellow/gold
                     letterSpacing: 2,
+                    decoration: TextDecoration.none,
                   ),
                 ),
                 const SizedBox(height: 60),
