@@ -102,10 +102,20 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   TextEditingController? _characterNameController;
   FocusNode? _characterNameFocusNode;
   String _selectedSpriteTypeForCreation = 'char-1';
+  
+  // Loading screen state
+  bool _isLoading = true;
+  String _loadingStatus = 'Loading assets...';
+  double _loadingProgress = 0.0;
+  bool _assetsLoaded = false;
+  bool _serverConnected = false;
+  bool _accountInitialized = false;
+  DateTime? _loadingStartTime;
 
   @override
   void initState() {
     super.initState();
+    _loadingStartTime = DateTime.now();
     _currentCharacterId = widget.characterId;
     _currentCharacterName = widget.characterName;
     _currentSpriteType = widget.spriteType;
@@ -114,10 +124,31 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _setupGameService();
     _gameService.connect();
     _initializeAccount();
+    _checkLoadingComplete();
+    
+    // Timeout: if server doesn't connect within 10 seconds, proceed anyway
+    Future.delayed(const Duration(seconds: 10), () {
+      if (mounted && !_serverConnected) {
+        setState(() {
+          _serverConnected = true; // Allow game to proceed
+          _loadingStatus = 'Server connection timeout - continuing offline';
+          _checkLoadingComplete();
+        });
+      }
+    });
     
     _gameService.socket?.on('connect', (_) {
       print('Socket connected, requesting player list...');
       _gameService.socket?.emit('game:requestPlayers');
+      
+      if (mounted) {
+        setState(() {
+          _serverConnected = true;
+          _loadingProgress = 0.8;
+          _loadingStatus = 'Initializing account...';
+          _checkLoadingComplete();
+        });
+      }
       
       if (_currentCharacterId != null) {
         Future.delayed(const Duration(milliseconds: 500), () {
@@ -129,6 +160,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.socket?.on('reconnect', (_) {
       print('Socket reconnected, rejoining game...');
       _gameService.socket?.emit('game:requestPlayers');
+      
+      if (mounted) {
+        setState(() {
+          _serverConnected = true;
+          _loadingProgress = 0.8;
+          _checkLoadingComplete();
+        });
+      }
       
       if (_currentCharacterId != null) {
         Future.delayed(const Duration(milliseconds: 500), () {
@@ -195,6 +234,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             _accountId = accountId;
             _characters = characters;
             _isInitialized = true;
+            _accountInitialized = true;
+            _loadingProgress = 1.0;
+            _loadingStatus = 'Ready!';
+            _checkLoadingComplete();
           });
         }
       } else {
@@ -207,6 +250,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             _accountId = accountId;
             _characters = characters;
             _isInitialized = true;
+            _accountInitialized = true;
+            _loadingProgress = 1.0;
+            _loadingStatus = 'Ready!';
+            _checkLoadingComplete();
           });
         }
       }
@@ -214,21 +261,66 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       if (mounted) {
         setState(() {
           _isInitialized = true;
+          _accountInitialized = true;
+          _loadingProgress = 1.0;
+          _checkLoadingComplete();
         });
       }
     }
   }
 
+  void _checkLoadingComplete() {
+    if (_assetsLoaded && _serverConnected && _accountInitialized) {
+      if (_loadingStartTime == null) return;
+      
+      final elapsed = DateTime.now().difference(_loadingStartTime!);
+      final minimumDisplayTime = const Duration(seconds: 1);
+      final remainingTime = minimumDisplayTime - elapsed;
+      
+      // Wait for minimum 1 second, or show "Ready!" for at least 500ms
+      final delay = remainingTime.isNegative 
+          ? const Duration(milliseconds: 500)
+          : remainingTime + const Duration(milliseconds: 500);
+      
+      Future.delayed(delay, () {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      });
+    }
+  }
+
   Future<void> _loadSprites() async {
+    if (mounted) {
+      setState(() {
+        _loadingStatus = 'Loading assets...';
+        _loadingProgress = 0.1;
+      });
+    }
+    
     final char1Bytes = await rootBundle.load('assets/char-1.png');
     final char1Codec = await ui.instantiateImageCodec(char1Bytes.buffer.asUint8List());
     final char1Frame = await char1Codec.getNextFrame();
     _char1Sprite = char1Frame.image;
+    
+    if (mounted) {
+      setState(() {
+        _loadingProgress = 0.3;
+      });
+    }
 
     final char2Bytes = await rootBundle.load('assets/char-2.png');
     final char2Codec = await ui.instantiateImageCodec(char2Bytes.buffer.asUint8List());
     final char2Frame = await char2Codec.getNextFrame();
     _char2Sprite = char2Frame.image;
+    
+    if (mounted) {
+      setState(() {
+        _loadingProgress = 0.5;
+      });
+    }
 
     try {
       final worldBytes = await rootBundle.load('assets/world-img.jpg');
@@ -242,7 +334,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     }
 
     if (mounted) {
-      setState(() {});
+      setState(() {
+        _assetsLoaded = true;
+        _loadingProgress = 0.6;
+        _loadingStatus = 'Connecting to server...';
+        _checkLoadingComplete();
+      });
     }
   }
 
@@ -608,27 +705,109 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     });
     
-    return KeyboardListener(
-      focusNode: _keyboardFocusNode,
-      onKeyEvent: (event) {
-        final key = event.logicalKey;
-        
-        if (event is KeyDownEvent) {
-          if (key == LogicalKeyboardKey.arrowLeft ||
-              key == LogicalKeyboardKey.keyA ||
-              key == LogicalKeyboardKey.arrowRight ||
-              key == LogicalKeyboardKey.keyD ||
-              key == LogicalKeyboardKey.arrowUp ||
-              key == LogicalKeyboardKey.keyW ||
-              key == LogicalKeyboardKey.arrowDown ||
-              key == LogicalKeyboardKey.keyS) {
-            _pressedKeys.add(key);
-          }
-        } else if (event is KeyUpEvent) {
-          _pressedKeys.remove(key);
-        }
-      },
-      child: gameContent,
+    return Stack(
+      children: [
+        KeyboardListener(
+          focusNode: _keyboardFocusNode,
+          onKeyEvent: (event) {
+            final key = event.logicalKey;
+            
+            if (event is KeyDownEvent) {
+              if (key == LogicalKeyboardKey.arrowLeft ||
+                  key == LogicalKeyboardKey.keyA ||
+                  key == LogicalKeyboardKey.arrowRight ||
+                  key == LogicalKeyboardKey.keyD ||
+                  key == LogicalKeyboardKey.arrowUp ||
+                  key == LogicalKeyboardKey.keyW ||
+                  key == LogicalKeyboardKey.arrowDown ||
+                  key == LogicalKeyboardKey.keyS) {
+                _pressedKeys.add(key);
+              }
+            } else if (event is KeyUpEvent) {
+              _pressedKeys.remove(key);
+            }
+          },
+          child: gameContent,
+        ),
+        if (_isLoading)
+          _buildLoadingScreen(),
+      ],
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Positioned.fill(
+      child: Container(
+        color: const Color(0xFF1a237e), // Dark blue background
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Game Title
+              const Text(
+                'RogueSouls',
+                style: TextStyle(
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFb8860b), // Dark yellow/gold
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 60),
+              // Loading Bar Container
+              Container(
+                width: min(_screenWidth * 0.7, 400),
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.white24, width: 1),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Stack(
+                    children: [
+                      // Animated progress bar
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0.0, end: _loadingProgress),
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOut,
+                        builder: (context, value, child) {
+                          return FractionallySizedBox(
+                            widthFactor: value,
+                            alignment: Alignment.centerLeft,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    const Color(0xFFb8860b), // Dark yellow
+                                    const Color(0xFFdaa520), // Goldenrod
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Loading Status Text
+              Text(
+                _loadingStatus,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.white70,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
