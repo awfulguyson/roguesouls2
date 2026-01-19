@@ -9,10 +9,55 @@ interface Player {
   y: number;
 }
 
+interface Enemy {
+  id: string;
+  x: number;
+  y: number;
+  maxHp: number;
+  currentHp: number;
+  isAggroed: boolean;
+  spriteType?: string;
+  direction?: string;
+}
+
 // Store players by characterId (not socketId) so reconnections work
 const players: Map<string, Player> = new Map();
 // Map socketId to characterId for cleanup on disconnect
 const socketToCharacter: Map<string, string> = new Map();
+// Store enemies - shared across all players
+const enemies: Map<string, Enemy> = new Map();
+
+// Initialize enemies at fixed positions
+function initializeEnemies() {
+  const enemyPositions = [
+    { x: 100, y: 100 },
+    { x: -100, y: 100 },
+    { x: 100, y: -100 },
+    { x: -100, y: -100 },
+    { x: 200, y: 0 },
+  ];
+  
+  enemyPositions.forEach((pos, index) => {
+    // Randomly assign enemy sprite type (enemy-1 or enemy-2)
+    const spriteTypes = ['enemy-1', 'enemy-2'];
+    const spriteType = spriteTypes[Math.floor(Math.random() * spriteTypes.length)];
+    
+    const enemy: Enemy = {
+      id: `enemy_${index}`,
+      x: pos.x,
+      y: pos.y,
+      maxHp: 100,
+      currentHp: 100,
+      isAggroed: false,
+      spriteType: spriteType,
+      direction: 'down',
+    };
+    enemies.set(enemy.id, enemy);
+  });
+}
+
+// Initialize enemies on server start
+initializeEnemies();
 
 export function setupSocketIO(io: Server) {
   io.on('connection', (socket: Socket) => {
@@ -21,10 +66,18 @@ export function setupSocketIO(io: Server) {
     
     // Send current players list to newly connected client (for viewing before joining)
     socket.emit('game:players', Array.from(players.values()));
+    
+    // Send current enemies list to newly connected client
+    socket.emit('game:enemies', Array.from(enemies.values()));
 
     // Request current players list
     socket.on('game:requestPlayers', () => {
       socket.emit('game:players', Array.from(players.values()));
+    });
+    
+    // Request current enemies list
+    socket.on('game:requestEnemies', () => {
+      socket.emit('game:enemies', Array.from(enemies.values()));
     });
 
     // Player joins game
@@ -74,6 +127,9 @@ export function setupSocketIO(io: Server) {
       console.log(`All players:`, Array.from(players.values()).map(p => `${p.name} (${p.id})`));
       socket.emit('game:players', otherPlayers);
       
+      // Send current enemies to this player
+      socket.emit('game:enemies', Array.from(enemies.values()));
+      
       console.log(`Total players: ${players.size}`);
     });
 
@@ -97,6 +153,35 @@ export function setupSocketIO(io: Server) {
         }
       } else {
         console.log(`Movement received but characterId not found for socket: ${socket.id}`);
+      }
+    });
+
+    // Enemy damage
+    socket.on('enemy:damage', (data: { enemyId: string; damage: number }) => {
+      const enemy = enemies.get(data.enemyId);
+      if (enemy && enemy.currentHp > 0) {
+        enemy.currentHp = Math.max(0, enemy.currentHp - data.damage);
+        
+        // Aggro enemy when damaged
+        if (!enemy.isAggroed && data.damage > 0) {
+          enemy.isAggroed = true;
+        }
+        
+        // Broadcast enemy update to all clients
+        io.emit('enemy:updated', {
+          id: enemy.id,
+          x: enemy.x,
+          y: enemy.y,
+          currentHp: enemy.currentHp,
+          maxHp: enemy.maxHp,
+          isAggroed: enemy.isAggroed,
+        });
+        
+        // Remove enemy if dead
+        if (enemy.currentHp <= 0) {
+          enemies.delete(enemy.id);
+          io.emit('enemy:removed', { id: enemy.id });
+        }
       }
     });
 

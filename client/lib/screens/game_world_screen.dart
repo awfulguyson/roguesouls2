@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/game_service.dart';
 import '../services/api_service.dart';
 import '../models/player.dart';
+import '../models/enemy.dart';
+import '../models/projectile.dart';
 import '../widgets/virtual_joystick.dart';
 import 'initial_screen.dart';
 
@@ -83,6 +85,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   PlayerDirection _lastVerticalDirection = PlayerDirection.down;
   ui.Image? _char1Sprite;
   ui.Image? _char2Sprite;
+  ui.Image? _enemy1Sprite;
+  ui.Image? _enemy2Sprite;
   ui.Image? _worldBackground;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
@@ -111,6 +115,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   bool _serverConnected = false;
   bool _accountInitialized = false;
   DateTime? _loadingStartTime;
+  
+  // Enemy and combat system
+  final Map<String, Enemy> _enemies = {};
+  final Map<String, Projectile> _projectiles = {};
+  String? _targetedEnemyId;
+  Timer? _projectileUpdateTimer;
+  int _projectileIdCounter = 0;
+  double _playerHp = 100.0;
+  double _playerMaxHp = 100.0;
+  DateTime? _lastPlayerDamageTime;
 
   @override
   void initState() {
@@ -140,6 +154,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.socket?.on('connect', (_) {
       print('Socket connected, requesting player list...');
       _gameService.socket?.emit('game:requestPlayers');
+      _gameService.requestEnemies();
       
       if (mounted) {
         setState(() {
@@ -165,6 +180,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.socket?.on('reconnect', (_) {
       print('Socket reconnected, rejoining game...');
       _gameService.socket?.emit('game:requestPlayers');
+      _gameService.requestEnemies();
       
       if (mounted) {
         setState(() {
@@ -208,6 +224,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         _lastSentX = _playerX;
         _lastSentY = _playerY;
       }
+    });
+    
+    // Request enemies from server
+    _gameService.requestEnemies();
+    
+    // Projectile update timer
+    _projectileUpdateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      _updateProjectiles();
     });
     
     if (_currentCharacterId == null) {
@@ -357,6 +381,28 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       });
     }
 
+    final enemy1Bytes = await rootBundle.load('assets/enemy-1.png');
+    final enemy1Codec = await ui.instantiateImageCodec(enemy1Bytes.buffer.asUint8List());
+    final enemy1Frame = await enemy1Codec.getNextFrame();
+    _enemy1Sprite = enemy1Frame.image;
+    
+    if (mounted) {
+      setState(() {
+        _loadingProgress = 0.55;
+      });
+    }
+
+    final enemy2Bytes = await rootBundle.load('assets/enemy-2.png');
+    final enemy2Codec = await ui.instantiateImageCodec(enemy2Bytes.buffer.asUint8List());
+    final enemy2Frame = await enemy2Codec.getNextFrame();
+    _enemy2Sprite = enemy2Frame.image;
+    
+    if (mounted) {
+      setState(() {
+        _loadingProgress = 0.6;
+      });
+    }
+
     try {
       final worldBytes = await rootBundle.load('assets/world-img.jpg');
       final worldCodec = await ui.instantiateImageCodec(worldBytes.buffer.asUint8List());
@@ -432,7 +478,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       
       final newX = (data['x'] as num).toDouble();
       final newY = (data['y'] as num).toDouble();
-      print('Received player:moved event: $playerId at ($newX, $newY)');
       
       if (_players.containsKey(playerId)) {
         setState(() {
@@ -488,6 +533,101 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       });
     };
     _gameService.addPlayerLeftListener(_playerLeftCallback);
+
+    _enemiesListCallback = (enemiesList) {
+      if (!mounted) return;
+      setState(() {
+        _enemies.clear();
+        for (var enemyData in enemiesList) {
+          final data = enemyData as Map<String, dynamic>;
+          final enemy = Enemy(
+            id: data['id'] as String,
+            x: (data['x'] as num).toDouble(),
+            y: (data['y'] as num).toDouble(),
+            maxHp: (data['maxHp'] as num).toDouble(),
+            currentHp: (data['currentHp'] as num).toDouble(),
+            isAggroed: data['isAggroed'] as bool? ?? false,
+            spriteType: data['spriteType'] as String?,
+            direction: _directionFromString(data['direction'] as String? ?? 'down'),
+          );
+          _enemies[enemy.id] = enemy;
+        }
+        _repaintCounter++;
+      });
+    };
+    _gameService.addEnemiesListListener(_enemiesListCallback);
+
+    _enemyUpdatedCallback = (data) {
+      if (!mounted) return;
+      final enemyId = data['id'] as String;
+      if (_enemies.containsKey(enemyId)) {
+        setState(() {
+          final enemy = _enemies[enemyId]!;
+          final oldY = enemy.y;
+          enemy.x = (data['x'] as num).toDouble();
+          enemy.y = (data['y'] as num).toDouble();
+          enemy.currentHp = (data['currentHp'] as num).toDouble();
+          enemy.maxHp = (data['maxHp'] as num).toDouble();
+          enemy.isAggroed = data['isAggroed'] as bool? ?? false;
+          if (data['spriteType'] != null) {
+            enemy.spriteType = data['spriteType'] as String;
+          }
+          if (data['direction'] != null) {
+            enemy.direction = _directionFromString(data['direction'] as String);
+          } else {
+            // Update direction based on Y movement
+            final dy = enemy.y - oldY;
+            if (dy != 0) {
+              enemy.direction = dy < 0 ? PlayerDirection.up : PlayerDirection.down;
+            }
+          }
+          _repaintCounter++;
+        });
+      } else {
+        // New enemy
+        setState(() {
+          final enemy = Enemy(
+            id: enemyId,
+            x: (data['x'] as num).toDouble(),
+            y: (data['y'] as num).toDouble(),
+            maxHp: (data['maxHp'] as num).toDouble(),
+            currentHp: (data['currentHp'] as num).toDouble(),
+            isAggroed: data['isAggroed'] as bool? ?? false,
+            spriteType: data['spriteType'] as String?,
+            direction: _directionFromString(data['direction'] as String? ?? 'down'),
+          );
+          _enemies[enemyId] = enemy;
+          _repaintCounter++;
+        });
+      }
+    };
+    _gameService.addEnemyUpdatedListener(_enemyUpdatedCallback);
+
+    _enemyRemovedCallback = (data) {
+      if (!mounted) return;
+      final enemyId = data['id'] as String;
+      setState(() {
+        _enemies.remove(enemyId);
+        if (_targetedEnemyId == enemyId) {
+          _targetedEnemyId = null;
+        }
+        _repaintCounter++;
+      });
+    };
+    _gameService.addEnemyRemovedListener(_enemyRemovedCallback);
+  }
+
+  PlayerDirection _directionFromString(String dir) {
+    switch (dir.toLowerCase()) {
+      case 'up':
+        return PlayerDirection.up;
+      case 'left':
+        return PlayerDirection.left;
+      case 'right':
+        return PlayerDirection.right;
+      default:
+        return PlayerDirection.down;
+    }
   }
 
   void _updateMovement() {
@@ -609,6 +749,149 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     }
   }
 
+  // Enemies are now server-managed, no client-side AI needed
+
+  void _updateProjectiles() {
+    if (!mounted) return;
+    
+    bool needsUpdate = false;
+    final projectilesToRemove = <String>[];
+    
+    for (var projectile in _projectiles.values) {
+      if (!projectile.isActive) {
+        projectilesToRemove.add(projectile.id);
+        continue;
+      }
+      
+      final oldX = projectile.x;
+      final oldY = projectile.y;
+      projectile.update();
+      
+      if (projectile.x != oldX || projectile.y != oldY) {
+        needsUpdate = true;
+      }
+      
+      // Check collision with target enemy
+      if (projectile.targetEnemyId != null && 
+          _enemies.containsKey(projectile.targetEnemyId)) {
+        final enemy = _enemies[projectile.targetEnemyId]!;
+        final dx = projectile.x - enemy.x;
+        final dy = projectile.y - enemy.y;
+        final distance = sqrt(dx * dx + dy * dy);
+        
+        if (distance < enemy.size / 2) {
+          // Hit! Send damage to server
+          _gameService.damageEnemy(projectile.targetEnemyId!, projectile.damage);
+          projectilesToRemove.add(projectile.id);
+          needsUpdate = true;
+        }
+      }
+      
+      // Remove if reached target
+      if (projectile.hasReachedTarget()) {
+        projectilesToRemove.add(projectile.id);
+        needsUpdate = true;
+      }
+    }
+    
+    // Remove inactive projectiles
+    for (var id in projectilesToRemove) {
+      _projectiles.remove(id);
+    }
+    
+    if (needsUpdate && mounted) {
+      setState(() {
+        _repaintCounter++;
+      });
+    }
+  }
+
+  void _targetNextEnemy() {
+    if (_enemies.isEmpty) return;
+    
+    final enemyList = _enemies.values.where((e) => e.isAlive).toList();
+    if (enemyList.isEmpty) {
+      _targetedEnemyId = null;
+      return;
+    }
+    
+    if (_targetedEnemyId == null) {
+      // Target first enemy
+      _targetedEnemyId = enemyList.first.id;
+    } else {
+      // Find current index and target next
+      final currentIndex = enemyList.indexWhere((e) => e.id == _targetedEnemyId);
+      if (currentIndex == -1 || currentIndex == enemyList.length - 1) {
+        _targetedEnemyId = enemyList.first.id;
+      } else {
+        _targetedEnemyId = enemyList[currentIndex + 1].id;
+      }
+    }
+    
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _targetEnemyAtPosition(Offset screenPosition) {
+    final worldX = _screenToWorldX(screenPosition.dx);
+    final worldY = _screenToWorldY(screenPosition.dy);
+    
+    Enemy? closestEnemy;
+    double closestDistance = double.infinity;
+    
+    for (var enemy in _enemies.values) {
+      if (!enemy.isAlive) continue;
+      
+      final dx = worldX - enemy.x;
+      final dy = worldY - enemy.y;
+      final distance = sqrt(dx * dx + dy * dy);
+      
+      if (distance < enemy.size && distance < closestDistance) {
+        closestEnemy = enemy;
+        closestDistance = distance;
+      }
+    }
+    
+    if (closestEnemy != null) {
+      _targetedEnemyId = closestEnemy.id;
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
+  void _shootProjectile({int attackType = 1}) {
+    if (_targetedEnemyId == null || !_enemies.containsKey(_targetedEnemyId)) {
+      return;
+    }
+    
+    final enemy = _enemies[_targetedEnemyId]!;
+    if (!enemy.isAlive) return;
+    
+    // Set damage based on attack type: 1 = 10hp, 2 = 20hp, others default to 10hp
+    final damage = attackType == 2 ? 20.0 : 10.0;
+    
+    final projectile = Projectile(
+      id: 'projectile_${_projectileIdCounter++}',
+      x: _playerX,
+      y: _playerY,
+      targetX: enemy.x,
+      targetY: enemy.y,
+      speed: 5.0,
+      damage: damage,
+      targetEnemyId: enemy.id,
+    );
+    
+    _projectiles[projectile.id] = projectile;
+    
+    if (mounted) {
+      setState(() {
+        _repaintCounter++;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
@@ -648,11 +931,18 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _currentSpriteType ?? 'char-1',
                   _char1Sprite,
                   _char2Sprite,
+                  _enemy1Sprite,
+                  _enemy2Sprite,
                   _worldBackground,
                   _worldToScreenX,
                   _worldToScreenY,
                   _playerSize,
                   _repaintCounter,
+                  _enemies,
+                  _projectiles,
+                  _targetedEnemyId,
+                  _playerHp,
+                  _playerMaxHp,
                 ),
                 size: Size.infinite,
               ),
@@ -757,6 +1047,26 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   key == LogicalKeyboardKey.arrowDown ||
                   key == LogicalKeyboardKey.keyS) {
                 _pressedKeys.add(key);
+              } else if (key == LogicalKeyboardKey.tab) {
+                _targetNextEnemy();
+              } else if (key == LogicalKeyboardKey.digit1) {
+                _shootProjectile(attackType: 1);
+              } else if (key == LogicalKeyboardKey.digit2) {
+                _shootProjectile(attackType: 2);
+              } else if (key == LogicalKeyboardKey.digit3) {
+                _shootProjectile(attackType: 3);
+              } else if (key == LogicalKeyboardKey.digit4) {
+                _shootProjectile(attackType: 4);
+              } else if (key == LogicalKeyboardKey.digit5) {
+                _shootProjectile(attackType: 5);
+              } else if (key == LogicalKeyboardKey.digit6) {
+                _shootProjectile(attackType: 6);
+              } else if (key == LogicalKeyboardKey.digit7) {
+                _shootProjectile(attackType: 7);
+              } else if (key == LogicalKeyboardKey.digit8) {
+                _shootProjectile(attackType: 8);
+              } else if (key == LogicalKeyboardKey.digit9) {
+                _shootProjectile(attackType: 9);
               }
             } else if (event is KeyUpEvent) {
               _pressedKeys.remove(key);
@@ -1921,6 +2231,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   Function(Map<String, dynamic>) _playerMovedCallback = (_) {};
   Function(Map<String, dynamic>) _playerLeftCallback = (_) {};
   Function(List<dynamic>) _playersListCallback = (_) {};
+  Function(List<dynamic>) _enemiesListCallback = (_) {};
+  Function(Map<String, dynamic>) _enemyUpdatedCallback = (_) {};
+  Function(Map<String, dynamic>) _enemyRemovedCallback = (_) {};
 
   @override
   void dispose() {
@@ -1929,11 +2242,15 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _characterNameFocusNode?.dispose();
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
+    _projectileUpdateTimer?.cancel();
     _gameService.removeCallback(
       onPlayerJoined: _playerJoinedCallback,
       onPlayerMoved: _playerMovedCallback,
       onPlayerLeft: _playerLeftCallback,
       onPlayersList: _playersListCallback,
+      onEnemiesList: _enemiesListCallback,
+      onEnemyUpdated: _enemyUpdatedCallback,
+      onEnemyRemoved: _enemyRemovedCallback,
     );
     super.dispose();
   }
@@ -1949,11 +2266,18 @@ class GameWorldPainter extends CustomPainter {
   final String currentPlayerSpriteType;
   final ui.Image? char1Sprite;
   final ui.Image? char2Sprite;
+  final ui.Image? enemy1Sprite;
+  final ui.Image? enemy2Sprite;
   final ui.Image? worldBackground;
   final double Function(double) worldToScreenX;
   final double Function(double) worldToScreenY;
   final double playerSize;
   final int repaintCounter;
+  final Map<String, Enemy> enemies;
+  final Map<String, Projectile> projectiles;
+  final String? targetedEnemyId;
+  final double playerHp;
+  final double playerMaxHp;
   
   static const double _worldMinX = -5000.0;
   static const double _worldMaxX = 5000.0;
@@ -1970,11 +2294,18 @@ class GameWorldPainter extends CustomPainter {
     this.currentPlayerSpriteType,
     this.char1Sprite,
     this.char2Sprite,
+    this.enemy1Sprite,
+    this.enemy2Sprite,
     this.worldBackground,
     this.worldToScreenX,
     this.worldToScreenY,
     this.playerSize,
     this.repaintCounter,
+    this.enemies,
+    this.projectiles,
+    this.targetedEnemyId,
+    this.playerHp,
+    this.playerMaxHp,
   );
 
   void _drawSprite(
@@ -2012,6 +2343,15 @@ class GameWorldPainter extends CustomPainter {
       return char2Sprite;
     }
     return char1Sprite;
+  }
+
+  ui.Image? _getEnemySpriteForType(String? spriteType) {
+    if (spriteType == 'enemy-1') {
+      return enemy1Sprite;
+    } else if (spriteType == 'enemy-2') {
+      return enemy2Sprite;
+    }
+    return enemy1Sprite;
   }
 
   @override
@@ -2134,6 +2474,114 @@ class GameWorldPainter extends CustomPainter {
       final textX = screenX - textPainter.width / 2;
       textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
     }
+    
+    // Draw enemies
+    for (var enemy in enemies.values) {
+      if (!enemy.isAlive) continue;
+      
+      final screenX = worldToScreenX(enemy.x);
+      final screenY = worldToScreenY(enemy.y);
+      final enemySize = enemy.size;
+      
+      // Draw enemy sprite
+      final enemySprite = _getEnemySpriteForType(enemy.spriteType);
+      if (enemySprite != null) {
+        _drawSprite(canvas, enemySprite, enemy.x, enemy.y, enemySize, enemy.direction);
+      } else {
+        // Fallback to red rectangle if sprite not loaded
+        final enemyPaint = Paint()..color = Colors.red;
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: Offset(screenX, screenY),
+            width: enemySize,
+            height: enemySize,
+          ),
+          enemyPaint,
+        );
+      }
+      
+      // Draw HP bar
+      final hpBarWidth = enemySize;
+      final hpBarHeight = 6.0;
+      final hpBarY = screenY - enemySize / 2 - 15;
+      final hpPercent = enemy.currentHp / enemy.maxHp;
+      
+      // Background
+      canvas.drawRect(
+        Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth, hpBarHeight),
+        Paint()..color = Colors.black54,
+      );
+      
+      // HP bar
+      canvas.drawRect(
+        Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth * hpPercent, hpBarHeight),
+        Paint()..color = hpPercent > 0.5 ? Colors.green : (hpPercent > 0.25 ? Colors.orange : Colors.red),
+      );
+      
+      // Draw targeting indicator if targeted
+      if (targetedEnemyId == enemy.id) {
+        final indicatorPaint = Paint()
+          ..color = Colors.yellow
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3.0;
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: Offset(screenX, screenY),
+            width: enemySize + 10,
+            height: enemySize + 10,
+          ),
+          indicatorPaint,
+        );
+      }
+    }
+    
+    // Draw projectiles
+    for (var projectile in projectiles.values) {
+      if (!projectile.isActive) continue;
+      
+      final screenX = worldToScreenX(projectile.x);
+      final screenY = worldToScreenY(projectile.y);
+      
+      final projectilePaint = Paint()..color = Colors.yellow;
+      canvas.drawCircle(
+        Offset(screenX, screenY),
+        5.0,
+        projectilePaint,
+      );
+    }
+    
+    // Draw player HP bar
+    if (currentPlayerId.isNotEmpty) {
+      final hpBarWidth = 200.0;
+      final hpBarHeight = 20.0;
+      final hpBarX = 20.0;
+      final hpBarY = size.height - 40.0;
+      final hpPercent = playerHp / playerMaxHp;
+      
+      // Background
+      canvas.drawRect(
+        Rect.fromLTWH(hpBarX, hpBarY, hpBarWidth, hpBarHeight),
+        Paint()..color = Colors.black54,
+      );
+      
+      // HP bar
+      canvas.drawRect(
+        Rect.fromLTWH(hpBarX, hpBarY, hpBarWidth * hpPercent, hpBarHeight),
+        Paint()..color = hpPercent > 0.5 ? Colors.green : (hpPercent > 0.25 ? Colors.orange : Colors.red),
+      );
+      
+      // HP text
+      final hpText = 'HP: ${playerHp.toInt()}/${playerMaxHp.toInt()}';
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: hpText,
+          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(hpBarX + 5, hpBarY + 2));
+    }
   }
 
   @override
@@ -2163,6 +2611,39 @@ class GameWorldPainter extends CustomPainter {
     if ((oldDelegate.playerX - playerX).abs() > 0.01 ||
         (oldDelegate.playerY - playerY).abs() > 0.01) {
       return true;
+    }
+    
+    if (oldDelegate.enemies.length != enemies.length ||
+        oldDelegate.projectiles.length != projectiles.length ||
+        oldDelegate.targetedEnemyId != targetedEnemyId ||
+        (oldDelegate.playerHp - playerHp).abs() > 0.1) {
+      return true;
+    }
+    
+    for (var enemyId in enemies.keys) {
+      final oldEnemy = oldDelegate.enemies[enemyId];
+      final newEnemy = enemies[enemyId];
+      if (oldEnemy == null || newEnemy == null) {
+        return true;
+      }
+      if ((oldEnemy.x - newEnemy.x).abs() > 0.01 ||
+          (oldEnemy.y - newEnemy.y).abs() > 0.01 ||
+          (oldEnemy.currentHp - newEnemy.currentHp).abs() > 0.1) {
+        return true;
+      }
+    }
+    
+    for (var projectileId in projectiles.keys) {
+      final oldProjectile = oldDelegate.projectiles[projectileId];
+      final newProjectile = projectiles[projectileId];
+      if (oldProjectile == null || newProjectile == null) {
+        return true;
+      }
+      if ((oldProjectile.x - newProjectile.x).abs() > 0.01 ||
+          (oldProjectile.y - newProjectile.y).abs() > 0.01 ||
+          oldProjectile.isActive != newProjectile.isActive) {
+        return true;
+      }
     }
     
     return oldDelegate.currentPlayerName != currentPlayerName ||
