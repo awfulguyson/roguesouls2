@@ -72,6 +72,10 @@ flutter:
     - assets/char-1.png
     - assets/char-2.png
     - assets/world-img.jpg
+    - assets/enemy-1.png
+    - assets/enemy-2.png
+    - assets/enemy-3.png
+    - assets/enemy-4.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
