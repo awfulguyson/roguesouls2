@@ -920,6 +920,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 _pressedKeys.add(key);
               } else if (key == LogicalKeyboardKey.tab) {
                 _targetNextEnemy();
+              } else if (key == LogicalKeyboardKey.escape) {
+                setState(() {
+                  _showSettingsModal = !_showSettingsModal;
+                  _settingsView = null;
+                });
+                if (_showSettingsModal) {
+                  _refreshCharacters();
+                }
               }
             } else if (event is KeyUpEvent) {
               _pressedKeys.remove(key);
@@ -2246,42 +2254,60 @@ class GameWorldPainter extends CustomPainter {
       const worldWidth = 10000.0;
       const worldHeight = 10000.0;
       
-      // Calculate what world coordinates we want to see (centered on player)
+      // Desired world view (centered on player, in world units)
       final worldViewStartX = playerX - size.width / 2;
       final worldViewStartY = playerY - size.height / 2;
       final worldViewEndX = playerX + size.width / 2;
       final worldViewEndY = playerY + size.height / 2;
       
-      // Clamp to actual world bounds
-      final clampedStartX = worldViewStartX.clamp(_worldMinX, _worldMaxX);
-      final clampedStartY = worldViewStartY.clamp(_worldMinY, _worldMaxY);
-      final clampedEndX = worldViewEndX.clamp(_worldMinX, _worldMaxX);
-      final clampedEndY = worldViewEndY.clamp(_worldMinY, _worldMaxY);
-      
-      // Normalize to [0, 1] range within world bounds
-      final normStartX = (clampedStartX - _worldMinX) / worldWidth;
-      final normStartY = (clampedStartY - _worldMinY) / worldHeight;
-      final normEndX = (clampedEndX - _worldMinX) / worldWidth;
-      final normEndY = (clampedEndY - _worldMinY) / worldHeight;
-      
-      // Map to background image coordinates
-      final sourceX = normStartX * bgWidth;
-      final sourceY = normStartY * bgHeight;
-      final sourceW = (normEndX - normStartX) * bgWidth;
-      final sourceH = (normEndY - normStartY) * bgHeight;
-      
-      // Source rectangle (clamped to image bounds)
-      final sourceRect = Rect.fromLTWH(
-        sourceX.clamp(0.0, bgWidth),
-        sourceY.clamp(0.0, bgHeight),
-        sourceW.clamp(0.0, bgWidth - sourceX.clamp(0.0, bgWidth)),
-        sourceH.clamp(0.0, bgHeight - sourceY.clamp(0.0, bgHeight)),
+      final worldViewRect = Rect.fromLTWH(
+        worldViewStartX,
+        worldViewStartY,
+        size.width,
+        size.height,
+      );
+      final worldBoundsRect = Rect.fromLTWH(
+        _worldMinX,
+        _worldMinY,
+        worldWidth,
+        worldHeight,
       );
       
-      // Destination always fills entire screen
-      final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
-      
-      canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
+      // Intersection between view and world bounds (this is what we can actually show)
+      final visibleWorldRect = worldViewRect.intersect(worldBoundsRect);
+      if (!visibleWorldRect.isEmpty) {
+        // Normalize to [0, 1] within world bounds
+        final normStartX = (visibleWorldRect.left - _worldMinX) / worldWidth;
+        final normStartY = (visibleWorldRect.top - _worldMinY) / worldHeight;
+        final normEndX = (visibleWorldRect.right - _worldMinX) / worldWidth;
+        final normEndY = (visibleWorldRect.bottom - _worldMinY) / worldHeight;
+        
+        // Source rectangle in background image
+        final sourceX = normStartX * bgWidth;
+        final sourceY = normStartY * bgHeight;
+        final sourceW = (normEndX - normStartX) * bgWidth;
+        final sourceH = (normEndY - normStartY) * bgHeight;
+        
+        final sourceRect = Rect.fromLTWH(
+          sourceX.clamp(0.0, bgWidth),
+          sourceY.clamp(0.0, bgHeight),
+          sourceW.clamp(0.0, bgWidth - sourceX.clamp(0.0, bgWidth)),
+          sourceH.clamp(0.0, bgHeight - sourceY.clamp(0.0, bgHeight)),
+        );
+        
+        // Destination rectangle on screen: where the visible world portion sits
+        final offsetX = visibleWorldRect.left - worldViewRect.left;
+        final offsetY = visibleWorldRect.top - worldViewRect.top;
+        final destRect = Rect.fromLTWH(
+          offsetX,
+          offsetY,
+          visibleWorldRect.width,
+          visibleWorldRect.height,
+        );
+        
+        // Draw only the visible part of the world; the rest stays black (letterboxed)
+        canvas.drawImageRect(worldBackground!, sourceRect, destRect, Paint());
+      }
     }
     
     for (var player in players.values) {
