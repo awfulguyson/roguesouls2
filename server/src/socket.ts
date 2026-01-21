@@ -21,6 +21,11 @@ interface Enemy {
   isMoving: boolean;
   lastStateChangeTime: number;
   lastRotationAngle: number;
+  // Attack tracking
+  damageDealtBy: Map<string, number>; // playerId -> total damage dealt
+  targetPlayerId: string | null; // Player to attack
+  lastAttackTime: number; // Last time enemy attacked
+  isAttacking: boolean; // Whether enemy is currently attacking
 }
 
 const players: Map<string, Player> = new Map();
@@ -92,6 +97,10 @@ function spawnEnemy(enemyTypes: string[]) {
     isMoving: startMoving,
     lastStateChangeTime: lastStateChangeTime,
     lastRotationAngle: spriteType === 'enemy-5' ? Math.atan2(moveDirectionY, moveDirectionX) : 0,
+    damageDealtBy: new Map(),
+    targetPlayerId: null,
+    lastAttackTime: 0,
+    isAttacking: false,
   });
   
   // Broadcast new enemy to all clients
@@ -109,6 +118,7 @@ function spawnEnemy(enemyTypes: string[]) {
         moveDirectionX: enemy.moveDirectionX,
         moveDirectionY: enemy.moveDirectionY,
         lastRotationAngle: enemy.lastRotationAngle,
+        isAttacking: enemy.isAttacking,
       });
     }
   }
@@ -131,6 +141,9 @@ function updateEnemies() {
   const moveSpeed = 1.0;
   const moveDuration = 2000; // 2 seconds moving
   const pauseDuration = 3000; // 3 seconds paused
+  const attackRange = 64.0; // Attack range (half of player size)
+  const attackCooldown = 500; // 0.5 seconds between attacks
+  const attackDamage = 10.0;
 
   enemies.forEach((enemy, enemyId) => {
     if (!enemy.lastStateChangeTime) {
@@ -138,31 +151,111 @@ function updateEnemies() {
       return;
     }
 
-    const elapsed = now - enemy.lastStateChangeTime;
+    // Update target player based on damage dealt
+    if (enemy.damageDealtBy.size > 0) {
+      let maxDamage = 0;
+      let topDamager: string | null = null;
+      enemy.damageDealtBy.forEach((damage, playerId) => {
+        if (damage > maxDamage) {
+          maxDamage = damage;
+          topDamager = playerId;
+        }
+      });
+      enemy.targetPlayerId = topDamager;
+    }
 
-    if (enemy.isMoving) {
-      if (elapsed >= moveDuration) {
-        // Stop moving
-        enemy.isMoving = false;
-        enemy.moveDirectionX = 0;
-        enemy.moveDirectionY = 0;
-        enemy.lastStateChangeTime = now;
+    // If enemy has a target, move towards them
+    if (enemy.targetPlayerId) {
+      const targetPlayer = players.get(enemy.targetPlayerId);
+      if (targetPlayer && targetPlayer.hp > 0) {
+        const dx = targetPlayer.x - enemy.x;
+        const dy = targetPlayer.y - enemy.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Check if in attack range
+        if (distance <= attackRange) {
+          // Attack the player
+          enemy.isMoving = false;
+          enemy.moveDirectionX = 0;
+          enemy.moveDirectionY = 0;
+          enemy.isAttacking = true;
+
+          // Deal damage every 0.5 seconds
+          if (now - enemy.lastAttackTime >= attackCooldown) {
+            targetPlayer.hp = Math.max(0, targetPlayer.hp - attackDamage);
+            enemy.lastAttackTime = now;
+
+            // Broadcast player HP update
+            if (io) {
+              io.emit('player:damaged', {
+                playerId: targetPlayer.id,
+                currentHp: targetPlayer.hp,
+                maxHp: targetPlayer.maxHp,
+                damage: attackDamage,
+              });
+
+              // Check if player died
+              if (targetPlayer.hp <= 0) {
+                io.emit('player:death', {
+                  playerId: targetPlayer.id,
+                });
+              }
+            }
+          }
+        } else {
+          // Move towards target
+          enemy.isAttacking = false;
+          const normalizedDx = dx / distance;
+          const normalizedDy = dy / distance;
+          enemy.moveDirectionX = normalizedDx;
+          enemy.moveDirectionY = normalizedDy;
+          enemy.isMoving = true;
+          
+          // Move towards target
+          enemy.x += enemy.moveDirectionX * moveSpeed;
+          enemy.y += enemy.moveDirectionY * moveSpeed;
+
+          // Update rotation angle for zombie enemies
+          if (enemy.spriteType === 'enemy-5') {
+            enemy.lastRotationAngle = Math.atan2(enemy.moveDirectionY, enemy.moveDirectionX);
+          }
+        }
       } else {
-        // Move in current direction
-        enemy.x += enemy.moveDirectionX * moveSpeed;
-        enemy.y += enemy.moveDirectionY * moveSpeed;
+        // Target player is dead or doesn't exist, clear target
+        enemy.targetPlayerId = null;
+        enemy.isAttacking = false;
       }
-    } else {
-      if (elapsed >= pauseDuration) {
-        // Start moving in random direction
-        const angle = Math.random() * 2 * Math.PI;
-        enemy.moveDirectionX = Math.cos(angle);
-        enemy.moveDirectionY = Math.sin(angle);
-        enemy.isMoving = true;
-        enemy.lastStateChangeTime = now;
-        // Update rotation angle
-        if (enemy.spriteType === 'enemy-5') {
-          enemy.lastRotationAngle = Math.atan2(enemy.moveDirectionY, enemy.moveDirectionX);
+    }
+
+    // If no target, use random movement
+    if (!enemy.targetPlayerId) {
+      enemy.isAttacking = false;
+      const elapsed = now - enemy.lastStateChangeTime;
+
+      if (enemy.isMoving) {
+        if (elapsed >= moveDuration) {
+          // Stop moving
+          enemy.isMoving = false;
+          enemy.moveDirectionX = 0;
+          enemy.moveDirectionY = 0;
+          enemy.lastStateChangeTime = now;
+        } else {
+          // Move in current direction
+          enemy.x += enemy.moveDirectionX * moveSpeed;
+          enemy.y += enemy.moveDirectionY * moveSpeed;
+        }
+      } else {
+        if (elapsed >= pauseDuration) {
+          // Start moving in random direction
+          const angle = Math.random() * 2 * Math.PI;
+          enemy.moveDirectionX = Math.cos(angle);
+          enemy.moveDirectionY = Math.sin(angle);
+          enemy.isMoving = true;
+          enemy.lastStateChangeTime = now;
+          // Update rotation angle
+          if (enemy.spriteType === 'enemy-5') {
+            enemy.lastRotationAngle = Math.atan2(enemy.moveDirectionY, enemy.moveDirectionX);
+          }
         }
       }
     }
@@ -192,6 +285,7 @@ export function setupSocketIO(server: Server) {
         moveDirectionX: enemy.moveDirectionX,
         moveDirectionY: enemy.moveDirectionY,
         lastRotationAngle: enemy.lastRotationAngle,
+        isAttacking: enemy.isAttacking,
       }));
       io.emit('enemies:update', enemyArray);
     }
@@ -214,6 +308,7 @@ export function setupSocketIO(server: Server) {
         moveDirectionX: enemy.moveDirectionX,
         moveDirectionY: enemy.moveDirectionY,
         lastRotationAngle: enemy.lastRotationAngle,
+        isAttacking: enemy.isAttacking,
       }));
       socket.emit('enemies:update', enemyArray);
     }
@@ -235,6 +330,7 @@ export function setupSocketIO(server: Server) {
           moveDirectionX: enemy.moveDirectionX,
           moveDirectionY: enemy.moveDirectionY,
           lastRotationAngle: enemy.lastRotationAngle,
+          isAttacking: enemy.isAttacking,
         }));
         socket.emit('enemies:update', enemyArray);
       }
@@ -252,6 +348,11 @@ export function setupSocketIO(server: Server) {
           if (data.x != null) existingPlayer.x = data.x;
           if (data.y != null) existingPlayer.y = data.y;
           if (data.spriteType != null) existingPlayer.spriteType = data.spriteType;
+          // Initialize HP if not set
+          if (existingPlayer.hp === undefined) {
+            existingPlayer.hp = 100.0;
+            existingPlayer.maxHp = 100.0;
+          }
           socketToCharacter.set(socket.id, characterId);
         } else {
           const player: Player = {
@@ -261,6 +362,8 @@ export function setupSocketIO(server: Server) {
             spriteType: data.spriteType,
             x: data.x ?? 0,
             y: data.y ?? 0,
+            hp: 100.0,
+            maxHp: 100.0,
           };
 
           players.set(characterId, player);
@@ -320,6 +423,10 @@ export function setupSocketIO(server: Server) {
       if (!enemy) {
         return;
       }
+
+      // Track damage dealt by this player
+      const currentDamage = enemy.damageDealtBy.get(data.playerId) || 0;
+      enemy.damageDealtBy.set(data.playerId, currentDamage + data.damage);
 
       const wasAlive = enemy.currentHp > 0;
       enemy.currentHp = Math.max(0, enemy.currentHp - data.damage);

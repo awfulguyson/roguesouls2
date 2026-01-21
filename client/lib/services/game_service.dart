@@ -19,6 +19,8 @@ class GameService {
   final List<Function(Map<String, dynamic>)> _onEnemyDamagedListeners = [];
   final List<Function(Map<String, dynamic>)> _onEnemyDeathListeners = [];
   final List<Function(Map<String, dynamic>)> _onProjectileSpawnListeners = [];
+  final List<Function(Map<String, dynamic>)> _onPlayerDamagedListeners = [];
+  final List<Function(Map<String, dynamic>)> _onPlayerDeathListeners = [];
   
   // Add callback methods (for multiple listeners)
   void addPlayerJoinedListener(Function(Map<String, dynamic>) callback) {
@@ -72,6 +74,18 @@ class GameService {
   void addProjectileSpawnListener(Function(Map<String, dynamic>) callback) {
     if (!_onProjectileSpawnListeners.contains(callback)) {
       _onProjectileSpawnListeners.add(callback);
+    }
+  }
+  
+  void addPlayerDamagedListener(Function(Map<String, dynamic>) callback) {
+    if (!_onPlayerDamagedListeners.contains(callback)) {
+      _onPlayerDamagedListeners.add(callback);
+    }
+  }
+  
+  void addPlayerDeathListener(Function(Map<String, dynamic>) callback) {
+    if (!_onPlayerDeathListeners.contains(callback)) {
+      _onPlayerDeathListeners.add(callback);
     }
   }
   
@@ -193,7 +207,6 @@ class GameService {
     });
 
     socket!.on('game:players', (data) {
-      print('Received game:players: ${data.length} players');
       for (var listener in _onPlayersListListeners) {
         listener(data as List<dynamic>);
       }
@@ -245,6 +258,20 @@ class GameService {
 
     socket!.on('projectile:spawn', (data) {
       for (var listener in _onProjectileSpawnListeners) {
+        listener(data as Map<String, dynamic>);
+      }
+    });
+
+    socket!.on('player:damaged', (data) {
+      // Broadcast to all listeners (handled in game_world_screen)
+      for (var listener in _onPlayerDamagedListeners) {
+        listener(data as Map<String, dynamic>);
+      }
+    });
+
+    socket!.on('player:death', (data) {
+      // Broadcast to all listeners (handled in game_world_screen)
+      for (var listener in _onPlayerDeathListeners) {
         listener(data as Map<String, dynamic>);
       }
     });
@@ -365,7 +392,7 @@ class GameService {
     if (onEnemiesUpdate != null) _onEnemiesUpdateListeners.remove(onEnemiesUpdate);
     if (onEnemyDamaged != null) _onEnemyDamagedListeners.remove(onEnemyDamaged);
     if (onEnemyDeath != null) _onEnemyDeathListeners.remove(onEnemyDeath);
-    // Note: projectile spawn listeners cleanup would go here if needed
+    // Note: projectile spawn, player damaged, and player death listeners cleanup would go here if needed
   }
   
   // Method to clean up all callbacks without disconnecting
@@ -379,6 +406,8 @@ class GameService {
     _onEnemyDamagedListeners.clear();
     _onEnemyDeathListeners.clear();
     _onProjectileSpawnListeners.clear();
+    _onPlayerDamagedListeners.clear();
+    _onPlayerDeathListeners.clear();
   }
 }
 

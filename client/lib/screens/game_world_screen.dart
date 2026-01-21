@@ -539,45 +539,30 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
 
   void _setupGameService() {
     _playersListCallback = (players) {
-      print('onPlayersList called with ${players.length} players, characterId: $_currentCharacterId');
       if (!mounted) {
-        print('Skipping: not mounted');
         return;
       }
       setState(() {
         _players.clear();
         for (var playerData in players) {
-          print('Processing player: $playerData');
           final player = Player.fromJson(playerData as Map<String, dynamic>);
-          print('Parsed player: id=${player.id}, name=${player.name}, x=${player.x}, y=${player.y}');
           if (_currentCharacterId == null || player.id != _currentCharacterId) {
-            print('Adding player to map: ${player.id}');
             _players[player.id] = player;
-          } else {
-            print('Skipping self: ${player.id}');
           }
         }
-        print('Total players in map: ${_players.length}');
       });
     };
     _gameService.addPlayersListListener(_playersListCallback);
 
     _playerJoinedCallback = (data) {
-      print('onPlayerJoined called: $data, characterId: $_currentCharacterId');
       if (!mounted) {
-        print('Skipping: not mounted');
         return;
       }
       setState(() {
         final player = Player.fromJson(data);
-        print('Parsed joined player: id=${player.id}, name=${player.name}');
         if (_currentCharacterId == null || player.id != _currentCharacterId) {
-          print('Adding joined player to map: ${player.id}');
           _players[player.id] = player;
-        } else {
-          print('Skipping self (joined): ${player.id}');
         }
-        print('Total players in map after join: ${_players.length}');
       });
     };
     _gameService.addPlayerJoinedListener(_playerJoinedCallback);
@@ -591,6 +576,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       
       final newX = (data['x'] as num).toDouble();
       final newY = (data['y'] as num).toDouble();
+      
+      // Update player HP if provided
+      if (data['hp'] != null && data['maxHp'] != null) {
+        if (_players.containsKey(playerId)) {
+          _players[playerId]!.hp = (data['hp'] as num).toDouble();
+          _players[playerId]!.maxHp = (data['maxHp'] as num).toDouble();
+        }
+      }
       
       if (_players.containsKey(playerId)) {
         setState(() {
@@ -679,6 +672,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           existingEnemy.isMoving = enemyJson['isMoving'] as bool? ?? false;
           existingEnemy.moveDirectionX = (enemyJson['moveDirectionX'] as num?)?.toDouble() ?? 0.0;
           existingEnemy.moveDirectionY = (enemyJson['moveDirectionY'] as num?)?.toDouble() ?? 0.0;
+          
+          // Update attack state (if available)
+          if (enemyJson['isAttacking'] != null) {
+            // Store attack state if needed for visual feedback
+          }
           
           // Update last rotation angle for zombie enemies
           if (existingEnemy.spriteType == 'enemy-5' && enemyJson['lastRotationAngle'] != null) {
@@ -820,6 +818,50 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       });
     };
     _gameService.addProjectileSpawnListener(_projectileSpawnCallback);
+
+    _playerDamagedCallback = (data) {
+      if (!mounted) return;
+      final playerId = data['playerId'] as String;
+      final currentHp = (data['currentHp'] as num).toDouble();
+      final maxHp = (data['maxHp'] as num).toDouble();
+      
+      setState(() {
+        // Update current player HP if it's us
+        if (playerId == _currentCharacterId) {
+          _playerHp = currentHp;
+          _playerMaxHp = maxHp;
+        }
+        
+        // Update other player HP
+        if (_players.containsKey(playerId)) {
+          _players[playerId]!.hp = currentHp;
+          _players[playerId]!.maxHp = maxHp;
+        }
+        
+        _repaintCounter++;
+      });
+    };
+    _gameService.addPlayerDamagedListener(_playerDamagedCallback);
+
+    _playerDeathCallback = (data) {
+      if (!mounted) return;
+      final playerId = data['playerId'] as String;
+      
+      setState(() {
+        // If current player died, reset HP to max
+        if (playerId == _currentCharacterId) {
+          _playerHp = _playerMaxHp;
+        }
+        
+        // Update other player HP to 0 or remove them
+        if (_players.containsKey(playerId)) {
+          _players[playerId]!.hp = 0;
+        }
+        
+        _repaintCounter++;
+      });
+    };
+    _gameService.addPlayerDeathListener(_playerDeathCallback);
   }
 
   void _updateMovement() {
@@ -2817,6 +2859,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   Function(Map<String, dynamic>) _enemyDamagedCallback = (_) {};
   Function(Map<String, dynamic>) _enemyDeathCallback = (_) {};
   Function(Map<String, dynamic>) _projectileSpawnCallback = (_) {};
+  Function(Map<String, dynamic>) _playerDamagedCallback = (_) {};
+  Function(Map<String, dynamic>) _playerDeathCallback = (_) {};
 
   @override
   void dispose() {

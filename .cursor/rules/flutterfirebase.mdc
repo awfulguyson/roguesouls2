@@ -1,8 +1,9 @@
 ---
 alwaysApply: true
 ---
-ALWAYS run these 2 commands after making ANY changes to the codebase:
+ALWAYS run these 3 commands after making ANY changes to the codebase:
 1. cd C:\Users\A_Toz\Documents\Personal\Projects\roguesoulsc\client; flutter build web
 2. cd C:\Users\A_Toz\Documents\Personal\Projects\roguesoulsc; firebase deploy --only hosting
+3. cd C:\Users\A_Toz\Documents\Personal\Projects\roguesoulsc; git add -A; git commit -m "build - $(Get-Date -Format 'yyyy-MM-dd HH:mm')"; git push
 
 This must be done automatically after every code change, unless explicitly told otherwise by the user.
