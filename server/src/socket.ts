@@ -7,6 +7,8 @@ interface Player {
   spriteType?: string;
   x: number;
   y: number;
+  hp: number;
+  maxHp: number;
 }
 
 interface Enemy {
@@ -348,8 +350,8 @@ export function setupSocketIO(server: Server) {
           if (data.x != null) existingPlayer.x = data.x;
           if (data.y != null) existingPlayer.y = data.y;
           if (data.spriteType != null) existingPlayer.spriteType = data.spriteType;
-          // Initialize HP if not set
-          if (existingPlayer.hp === undefined) {
+          // Ensure HP is initialized (for backwards compatibility with existing players)
+          if (!existingPlayer.hp || existingPlayer.hp <= 0) {
             existingPlayer.hp = 100.0;
             existingPlayer.maxHp = 100.0;
           }
