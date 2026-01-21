@@ -87,9 +87,28 @@ npm run dev  # Starts with nodemon (auto-reload)
 
 ### Flutter Development
 
+**For local development:**
+
 ```bash
 cd client
-oa  # Hot reload enabled
+flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:3000 --dart-define=WEBSOCKET_URL=http://localhost:3000
+```
+
+This will:
+- Start a local development server that watches for file changes
+- Automatically rebuild when you save files (watch the terminal for rebuild messages)
+- Connect to `http://localhost:3000` for the backend
+- Open Chrome automatically
+
+**Note:** Flutter web requires a browser refresh (F5) to see changes after the rebuild completes. The terminal will show when the rebuild is done.
+
+**For production builds:**
+
+```bash
+cd client
+flutter build web
+cd ..
+firebase deploy --only hosting
 ```
 
 ## Notes

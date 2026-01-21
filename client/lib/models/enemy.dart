@@ -5,6 +5,8 @@ class Enemy {
   double x;
   double y;
   final String spriteType;
+  double maxHp;
+  double currentHp;
   
   // Movement state
   DateTime? lastStateChangeTime;
@@ -35,7 +37,25 @@ class Enemy {
     required this.x,
     required this.y,
     required this.spriteType,
-  });
+    double? maxHp,
+    double? currentHp,
+  }) : maxHp = maxHp ?? _getHpForSpriteType(spriteType),
+       currentHp = currentHp ?? _getHpForSpriteType(spriteType);
+  
+  static double _getHpForSpriteType(String spriteType) {
+    switch (spriteType) {
+      case 'enemy-1':
+        return 100.0;
+      case 'enemy-2':
+        return 101.0;
+      case 'enemy-3':
+        return 102.0;
+      case 'enemy-4':
+        return 103.0;
+      default:
+        return 100.0;
+    }
+  }
   
   void startMoving(Random random) {
     // Choose random direction

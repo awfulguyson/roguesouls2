@@ -8,8 +8,14 @@ import '../services/game_service.dart';
 import '../services/api_service.dart';
 import '../models/player.dart';
 import '../models/enemy.dart';
+import '../models/projectile.dart';
 import '../widgets/virtual_joystick.dart';
 import 'initial_screen.dart';
+import 'dart:html' as html show window;
+
+class _TargetEnemyIntent extends Intent {
+  const _TargetEnemyIntent();
+}
 
 class GameWorldScreen extends StatefulWidget {
   final String? characterId;
@@ -40,7 +46,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   int _repaintCounter = 0;
   double _playerX = 0.0;
   double _playerY = 0.0;
-  double _playerSpeed = 2.5;
+  double _playerSpeed = 7.5;
   double _playerSize = 128.0;
   Timer? _positionUpdateTimer;
   Timer? _movementTimer;
@@ -95,6 +101,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   final Random _random = Random();
   String? _targetedEnemyId;
   Timer? _enemyUpdateTimer;
+  
+  // Player health
+  double _playerHp = 100.0;
+  double _playerMaxHp = 100.0;
+  
+  // Projectiles
+  final List<Projectile> _projectiles = [];
+  DateTime? _lastAbility1Use;
+  static const Duration _ability1Cooldown = Duration(milliseconds: 500);
+  int _projectileIdCounter = 0;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
   String? _settingsView;
@@ -136,6 +152,18 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _gameService.connect();
     _initializeAccount();
     _checkLoadingComplete();
+    
+    // Prevent Tab key from triggering browser focus navigation on web
+    // Only when the game screen has focus
+    if (kIsWeb) {
+      html.window.document.addEventListener('keydown', (event) {
+        final keyEvent = event as dynamic;
+        if (keyEvent.keyCode == 9 && _keyboardFocusNode.hasFocus) { // Tab key
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true);
+    }
     
     // Timeout: if server doesn't connect within 10 seconds, proceed anyway
     Future.delayed(const Duration(seconds: 10), () {
@@ -207,6 +235,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _movementTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       _updateMovement();
       _interpolateOtherPlayers();
+      _updateProjectiles(16 / 1000.0); // Convert milliseconds to seconds
     });
     
     _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
@@ -709,22 +738,169 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     }
   }
   
+  bool _isEnemyVisible(Enemy enemy) {
+    final screenX = _worldToScreenX(enemy.x);
+    final screenY = _worldToScreenY(enemy.y);
+    
+    // Check if enemy is within screen bounds (with some padding for enemy size)
+    final padding = _playerSize / 2;
+    return screenX >= -padding &&
+           screenX <= _screenWidth + padding &&
+           screenY >= -padding &&
+           screenY <= _screenHeight + padding;
+  }
+  
+  void _useAbility1() {
+    // Check cooldown
+    final now = DateTime.now();
+    if (_lastAbility1Use != null) {
+      final timeSinceLastUse = now.difference(_lastAbility1Use!);
+      if (timeSinceLastUse < _ability1Cooldown) {
+        return; // Still on cooldown
+      }
+    }
+    
+    // Need a targeted enemy to fire at
+    if (_targetedEnemyId == null) {
+      return;
+    }
+    
+    // Find the targeted enemy
+    final targetEnemy = _enemies.firstWhere(
+      (e) => e.id == _targetedEnemyId,
+      orElse: () => throw StateError('Targeted enemy not found'),
+    );
+    
+    // Only fire if enemy is visible
+    if (!_isEnemyVisible(targetEnemy)) {
+      return;
+    }
+    
+    // Create projectile from player position to enemy position
+    final projectile = Projectile(
+      id: 'projectile_${_projectileIdCounter++}',
+      x: _playerX,
+      y: _playerY,
+      targetX: targetEnemy.x,
+      targetY: targetEnemy.y,
+      speed: 500.0,
+      damage: 10.0,
+    );
+    
+    _lastAbility1Use = now;
+    
+    if (mounted) {
+      setState(() {
+        _projectiles.add(projectile);
+        _repaintCounter++;
+      });
+    }
+  }
+  
+  void _updateProjectiles(double deltaTime) {
+    bool needsUpdate = false;
+    final projectilesToRemove = <Projectile>[];
+    final enemiesToDamage = <String, double>{}; // enemyId -> damage
+    
+    for (var projectile in _projectiles) {
+      // Update projectile position
+      final hit = projectile.update(deltaTime);
+      
+      if (hit) {
+        // Projectile reached target, check collision with enemies
+        for (var enemy in _enemies) {
+          final dx = projectile.x - enemy.x;
+          final dy = projectile.y - enemy.y;
+          final distance = sqrt(dx * dx + dy * dy);
+          
+          // If within enemy hitbox (using player size as reference)
+          if (distance < _playerSize) {
+            enemiesToDamage[enemy.id] = (enemiesToDamage[enemy.id] ?? 0) + projectile.damage;
+            projectilesToRemove.add(projectile);
+            needsUpdate = true;
+            break;
+          }
+        }
+        
+        // If projectile didn't hit an enemy but reached target, remove it
+        if (!projectilesToRemove.contains(projectile)) {
+          projectilesToRemove.add(projectile);
+          needsUpdate = true;
+        }
+      } else {
+        // Check if projectile is off-screen (beyond reasonable bounds)
+        final screenX = _worldToScreenX(projectile.x);
+        final screenY = _worldToScreenY(projectile.y);
+        final padding = 200.0; // Remove projectiles that are far off-screen
+        
+        if (screenX < -padding ||
+            screenX > _screenWidth + padding ||
+            screenY < -padding ||
+            screenY > _screenHeight + padding) {
+          projectilesToRemove.add(projectile);
+          needsUpdate = true;
+        } else {
+          needsUpdate = true; // Projectile is still moving
+        }
+      }
+    }
+    
+    // Apply damage to enemies
+    for (var entry in enemiesToDamage.entries) {
+      final enemy = _enemies.firstWhere((e) => e.id == entry.key);
+      enemy.currentHp = (enemy.currentHp - entry.value).clamp(0.0, enemy.maxHp);
+      
+      // If enemy dies, remove target if it was targeted
+      if (enemy.currentHp <= 0 && _targetedEnemyId == enemy.id) {
+        _targetedEnemyId = null;
+      }
+    }
+    
+    // Remove projectiles that hit or went off-screen
+    _projectiles.removeWhere((p) => projectilesToRemove.contains(p));
+    
+    if (needsUpdate && mounted) {
+      setState(() {
+        _repaintCounter++;
+      });
+    }
+  }
+  
   void _targetNextEnemy() {
-    if (_enemies.isEmpty) {
+    // Filter to only visible enemies
+    final visibleEnemies = _enemies.where((e) => _isEnemyVisible(e)).toList();
+    
+    if (visibleEnemies.isEmpty) {
       _targetedEnemyId = null;
+      if (mounted) {
+        setState(() {
+          _repaintCounter++;
+        });
+      }
       return;
     }
     
     if (_targetedEnemyId == null) {
-      // Target first enemy
-      _targetedEnemyId = _enemies.first.id;
+      // Target first visible enemy
+      _targetedEnemyId = visibleEnemies.first.id;
     } else {
-      // Find current index and target next
-      final currentIndex = _enemies.indexWhere((e) => e.id == _targetedEnemyId);
-      if (currentIndex == -1 || currentIndex == _enemies.length - 1) {
-        _targetedEnemyId = _enemies.first.id;
+      // Check if current target is still visible
+      final currentTarget = _enemies.firstWhere(
+        (e) => e.id == _targetedEnemyId,
+        orElse: () => visibleEnemies.first,
+      );
+      
+      if (!_isEnemyVisible(currentTarget)) {
+        // Current target is no longer visible, target first visible enemy
+        _targetedEnemyId = visibleEnemies.first.id;
       } else {
-        _targetedEnemyId = _enemies[currentIndex + 1].id;
+        // Find current index in visible enemies and target next
+        final currentIndex = visibleEnemies.indexWhere((e) => e.id == _targetedEnemyId);
+        if (currentIndex == -1 || currentIndex == visibleEnemies.length - 1) {
+          _targetedEnemyId = visibleEnemies.first.id;
+        } else {
+          _targetedEnemyId = visibleEnemies[currentIndex + 1].id;
+        }
       }
     }
     
@@ -743,7 +919,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     double closestDistance = double.infinity;
     const double targetRange = 100.0; // Range to target enemy
     
+    // Only consider visible enemies
     for (var enemy in _enemies) {
+      if (!_isEnemyVisible(enemy)) {
+        continue; // Skip enemies that are off-screen
+      }
+      
       final dx = worldX - enemy.x;
       final dy = worldY - enemy.y;
       final distance = sqrt(dx * dx + dy * dy);
@@ -814,6 +995,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _enemy3Sprite,
                   _enemy4Sprite,
                   _targetedEnemyId,
+                  _playerHp,
+                  _playerMaxHp,
+                  _projectiles,
                 ),
                 size: Size.infinite,
               ),
@@ -901,48 +1085,75 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     });
     
-    return Stack(
-      children: [
-        KeyboardListener(
-          focusNode: _keyboardFocusNode,
-          onKeyEvent: (event) {
-            final key = event.logicalKey;
-            
-            if (event is KeyDownEvent) {
-              if (key == LogicalKeyboardKey.arrowLeft ||
-                  key == LogicalKeyboardKey.keyA ||
-                  key == LogicalKeyboardKey.arrowRight ||
-                  key == LogicalKeyboardKey.keyD ||
-                  key == LogicalKeyboardKey.arrowUp ||
-                  key == LogicalKeyboardKey.keyW ||
-                  key == LogicalKeyboardKey.arrowDown ||
-                  key == LogicalKeyboardKey.keyS) {
-                _pressedKeys.add(key);
-              } else if (key == LogicalKeyboardKey.tab) {
-                _targetNextEnemy();
-              } else if (key == LogicalKeyboardKey.escape) {
-                setState(() {
-                  _showSettingsModal = !_showSettingsModal;
-                  _settingsView = null;
-                });
-                if (_showSettingsModal) {
-                  _refreshCharacters();
-                }
-              }
-            } else if (event is KeyUpEvent) {
-              _pressedKeys.remove(key);
-            }
-          },
-          child: GestureDetector(
-            onTapDown: (details) {
-              _targetEnemyAtPosition(details.localPosition);
+    return FocusScope(
+      canRequestFocus: true,
+      child: Stack(
+        children: [
+          Shortcuts(
+            shortcuts: {
+              const SingleActivator(LogicalKeyboardKey.tab): _TargetEnemyIntent(),
             },
-            child: gameContent,
+            child: Actions(
+              actions: {
+                _TargetEnemyIntent: CallbackAction<_TargetEnemyIntent>(
+                  onInvoke: (_) {
+                    _targetNextEnemy();
+                    return null;
+                  },
+                ),
+              },
+                child: KeyboardListener(
+                focusNode: _keyboardFocusNode,
+                autofocus: true,
+                onKeyEvent: (event) {
+                  final key = event.logicalKey;
+                  
+                  if (event is KeyDownEvent) {
+                    if (key == LogicalKeyboardKey.tab) {
+                      // Tab is handled by Shortcuts/Actions above
+                      // Prevent default browser behavior
+                      return;
+                    } else if (key == LogicalKeyboardKey.arrowLeft ||
+                        key == LogicalKeyboardKey.keyA ||
+                        key == LogicalKeyboardKey.arrowRight ||
+                        key == LogicalKeyboardKey.keyD ||
+                        key == LogicalKeyboardKey.arrowUp ||
+                        key == LogicalKeyboardKey.keyW ||
+                        key == LogicalKeyboardKey.arrowDown ||
+                        key == LogicalKeyboardKey.keyS) {
+                      _pressedKeys.add(key);
+                    } else if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
+                      _useAbility1();
+                    } else if (key == LogicalKeyboardKey.escape) {
+                      setState(() {
+                        _showSettingsModal = !_showSettingsModal;
+                        _settingsView = null;
+                      });
+                      if (_showSettingsModal) {
+                        _refreshCharacters();
+                      }
+                    }
+                  } else if (event is KeyUpEvent) {
+                    if (key == LogicalKeyboardKey.tab) {
+                      // Prevent default browser behavior
+                      return;
+                    }
+                    _pressedKeys.remove(key);
+                  }
+                },
+                child: GestureDetector(
+                  onTapDown: (details) {
+                    _targetEnemyAtPosition(details.localPosition);
+                  },
+                  child: gameContent,
+                ),
+              ),
+            ),
           ),
-        ),
-        if (_isLoading)
-          _buildLoadingScreen(),
-      ],
+          if (_isLoading)
+            _buildLoadingScreen(),
+        ],
+      ),
     );
   }
 
@@ -2137,6 +2348,9 @@ class GameWorldPainter extends CustomPainter {
   final ui.Image? enemy3Sprite;
   final ui.Image? enemy4Sprite;
   final String? targetedEnemyId;
+  final double playerHp;
+  final double playerMaxHp;
+  final List<Projectile> projectiles;
   
   static const double _worldMinX = -5000.0;
   static const double _worldMaxX = 5000.0;
@@ -2164,6 +2378,9 @@ class GameWorldPainter extends CustomPainter {
     this.enemy3Sprite,
     this.enemy4Sprite,
     this.targetedEnemyId,
+    this.playerHp,
+    this.playerMaxHp,
+    this.projectiles,
   );
 
   void _drawSprite(
@@ -2239,6 +2456,76 @@ class GameWorldPainter extends CustomPainter {
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.high;
     canvas.drawImageRect(sprite, sourceRect, destRect, paint);
+  }
+  
+  void _drawHealthBar(
+    Canvas canvas,
+    double screenX,
+    double screenY,
+    double currentHp,
+    double maxHp,
+    double size,
+    bool isTargeted,
+  ) {
+    final hpBarWidth = size;
+    final hpBarHeight = isTargeted ? 8.0 : 6.0;
+    final hpBarY = screenY - size / 2 - (isTargeted ? 20.0 : 15.0);
+    final hpPercent = (currentHp / maxHp).clamp(0.0, 1.0);
+    
+    // Background
+    final bgPaint = Paint()..color = Colors.black54;
+    canvas.drawRect(
+      Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth, hpBarHeight),
+      bgPaint,
+    );
+    
+    // HP bar
+    final hpColor = hpPercent > 0.6 
+        ? Colors.green 
+        : hpPercent > 0.3 
+            ? Colors.orange 
+            : Colors.red;
+    final hpPaint = Paint()..color = hpColor;
+    canvas.drawRect(
+      Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth * hpPercent, hpBarHeight),
+      hpPaint,
+    );
+    
+    // Border
+    final borderPaint = Paint()
+      ..color = isTargeted ? Colors.white : Colors.white70
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = isTargeted ? 2.0 : 1.0;
+    canvas.drawRect(
+      Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth, hpBarHeight),
+      borderPaint,
+    );
+    
+    // HP text if targeted
+    if (isTargeted) {
+      final hpText = '${currentHp.toInt()}/${maxHp.toInt()}';
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: hpText,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              const Shadow(
+                color: Colors.black,
+                blurRadius: 2.0,
+                offset: Offset(1, 1),
+              ),
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      final textX = screenX - textPainter.width / 2;
+      textPainter.paint(canvas, Offset(textX, hpBarY - 14));
+    }
   }
 
   @override
@@ -2367,6 +2654,10 @@ class GameWorldPainter extends CustomPainter {
       
       final screenX = worldToScreenX(playerX);
       final screenY = worldToScreenY(playerY);
+      
+      // Draw player health bar
+      _drawHealthBar(canvas, screenX, screenY, playerHp, playerMaxHp, playerSize, false);
+      
       final fontSize = playerSize * 0.1;
       final textPainter = TextPainter(
         text: TextSpan(
@@ -2424,29 +2715,60 @@ class GameWorldPainter extends CustomPainter {
         );
       }
       
+      // Draw enemy health bar
+      _drawHealthBar(canvas, screenX, screenY, enemy.currentHp, enemy.maxHp, playerSize, isTargeted);
+      
       // Draw enemy name
-      final fontSize = playerSize * 0.1;
+      final fontSize = isTargeted ? playerSize * 0.12 : playerSize * 0.1;
+      final textColor = isTargeted ? Colors.white : Colors.black;
       final textPainter = TextPainter(
         text: TextSpan(
           text: enemy.name,
           style: TextStyle(
-            color: Colors.white,
+            color: textColor,
             fontSize: fontSize,
-            fontWeight: FontWeight.bold,
-            shadows: [
+            fontWeight: isTargeted ? FontWeight.bold : FontWeight.normal,
+            shadows: isTargeted ? [
               const Shadow(
                 color: Colors.black,
-                blurRadius: 2.0,
+                blurRadius: 3.0,
                 offset: Offset(1, 1),
               ),
-            ],
+            ] : null,
           ),
         ),
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
       final textX = screenX - textPainter.width / 2;
-      textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
+      final nameY = screenY - playerSize / 2 - (isTargeted ? fontSize * 1.5 : fontSize * 1.2);
+      textPainter.paint(canvas, Offset(textX, nameY));
+    }
+    
+    // Draw projectiles
+    for (var projectile in projectiles) {
+      final screenX = worldToScreenX(projectile.x);
+      final screenY = worldToScreenY(projectile.y);
+      
+      // Draw projectile as a small circle
+      final projectilePaint = Paint()
+        ..color = Colors.orange
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(screenX, screenY),
+        4.0, // Projectile radius
+        projectilePaint,
+      );
+      
+      // Draw a trail/glow effect
+      final glowPaint = Paint()
+        ..color = Colors.orange.withOpacity(0.3)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(screenX, screenY),
+        8.0,
+        glowPaint,
+      );
     }
   }
 
