@@ -212,7 +212,7 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              // Sprite preview (top-left 512x512 only)
+                              // Sprite preview (800x800 image)
                               SizedBox(
                                 width: 100,
                                 height: 100,
@@ -226,7 +226,6 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
                                     child: Image.asset(
                                       'assets/${char['spriteType'] ?? 'char-1'}.png',
                                       fit: BoxFit.cover,
-                                      alignment: Alignment.topLeft,
                                       errorBuilder: (context, error, stackTrace) {
                                         return const Center(child: Icon(Icons.person));
                                       },

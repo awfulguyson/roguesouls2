@@ -9,12 +9,34 @@ import '../services/api_service.dart';
 import '../models/player.dart';
 import '../models/enemy.dart';
 import '../models/projectile.dart';
+import '../models/gold_coin.dart';
+import '../models/floating_text.dart';
 import '../widgets/virtual_joystick.dart';
 import 'initial_screen.dart';
 import 'dart:html' as html show window;
 
 class _TargetEnemyIntent extends Intent {
   const _TargetEnemyIntent();
+}
+
+// Helper painter for character image
+class _CharacterImagePainter extends CustomPainter {
+  final ui.Image image;
+  
+  _CharacterImagePainter(this.image);
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sourceRect = const Rect.fromLTWH(0, 0, 800, 800);
+    final destRect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final paint = Paint()
+      ..isAntiAlias = true
+      ..filterQuality = FilterQuality.high;
+    canvas.drawImageRect(image, sourceRect, destRect, paint);
+  }
+  
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class GameWorldScreen extends StatefulWidget {
@@ -88,6 +110,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   final Set<LogicalKeyboardKey> _pressedKeys = {};
   PlayerDirection _playerDirection = PlayerDirection.down;
   PlayerDirection _lastVerticalDirection = PlayerDirection.down;
+  // Track last movement direction for rotation (default facing down/south)
+  double _playerLastMoveX = 0.0;
+  double _playerLastMoveY = 1.0; // Default facing down
+  double _playerLastRotationAngle = 0.0; // Default rotation (facing down)
   ui.Image? _char1Sprite;
   ui.Image? _char2Sprite;
   ui.Image? _worldBackground;
@@ -95,6 +121,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   ui.Image? _enemy2Sprite;
   ui.Image? _enemy3Sprite;
   ui.Image? _enemy4Sprite;
+  ui.Image? _zombie1Sprite; // Sprite sheet for enemy-5
   
   // Enemies with fixed positions
   final List<Enemy> _enemies = [];
@@ -105,6 +132,20 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   // Player health
   double _playerHp = 100.0;
   double _playerMaxHp = 100.0;
+  
+  // Player experience
+  int _playerExp = 0;
+  int _playerLevel = 1;
+  static const int _expPerLevel = 100; // Base exp needed per level
+  
+  // Player gold
+  int _playerGold = 0;
+  
+  // Gold coins and floating text
+  final List<GoldCoin> _goldCoins = [];
+  final List<FloatingText> _floatingTexts = [];
+  int _goldCoinIdCounter = 0;
+  int _floatingTextIdCounter = 0;
   
   // Projectiles
   final List<Projectile> _projectiles = [];
@@ -180,6 +221,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       print('Socket connected, requesting player list...');
       _gameService.socket?.emit('game:requestPlayers');
       
+      // Request enemies update (server should send on connect, but request just in case)
+      print('Requesting enemies from server...');
+      _gameService.socket?.emit('game:requestEnemies');
+      
       if (mounted) {
         setState(() {
           _serverConnected = true;
@@ -236,6 +281,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _updateMovement();
       _interpolateOtherPlayers();
       _updateProjectiles(16 / 1000.0); // Convert milliseconds to seconds
+      _checkGoldCollection(); // Check for gold collection
+      _updateFloatingTexts(); // Update floating text animations
     });
     
     _positionUpdateTimer = Timer.periodic(const Duration(milliseconds: 33), (timer) {
@@ -250,9 +297,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     });
     
-    _enemyUpdateTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      _updateEnemies();
-    });
+    // Enemy updates are now received from server, no local timer needed
     
     if (_currentCharacterId == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -455,8 +500,17 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       print('❌ Failed to load enemy-4: $e');
     }
     
-    // Initialize enemies at fixed positions
-    _initializeEnemies();
+    try {
+      final zombie1Bytes = await rootBundle.load('assets/zombie-1-sprite.png');
+      final zombie1Codec = await ui.instantiateImageCodec(zombie1Bytes.buffer.asUint8List());
+      final zombie1Frame = await zombie1Codec.getNextFrame();
+      _zombie1Sprite = zombie1Frame.image;
+      print('✅ Zombie sprite sheet loaded: ${_zombie1Sprite!.width}x${_zombie1Sprite!.height}');
+    } catch (e) {
+      print('❌ Failed to load zombie-1-sprite: $e');
+    }
+    
+    // Enemies are now managed server-side, will be received via socket
 
     if (mounted) {
       setState(() {
@@ -476,7 +530,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       Enemy(id: 'enemy_2', x: 1000.0, y: -1000.0, spriteType: 'enemy-2'),
       Enemy(id: 'enemy_3', x: -1000.0, y: 1000.0, spriteType: 'enemy-3'),
       Enemy(id: 'enemy_4', x: 1000.0, y: 1000.0, spriteType: 'enemy-4'),
-      Enemy(id: 'enemy_5', x: 0.0, y: -1500.0, spriteType: 'enemy-1'),
+      Enemy(id: 'enemy_5', x: 0.0, y: -1500.0, spriteType: 'enemy-5'), // Zombie with sprite sheet
       Enemy(id: 'enemy_6', x: 1500.0, y: 0.0, spriteType: 'enemy-2'),
       Enemy(id: 'enemy_7', x: -1500.0, y: 0.0, spriteType: 'enemy-3'),
       Enemy(id: 'enemy_8', x: 0.0, y: 1500.0, spriteType: 'enemy-4'),
@@ -537,7 +591,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       
       final newX = (data['x'] as num).toDouble();
       final newY = (data['y'] as num).toDouble();
-      print('Received player:moved event: $playerId at ($newX, $newY)');
       
       if (_players.containsKey(playerId)) {
         setState(() {
@@ -593,6 +646,125 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       });
     };
     _gameService.addPlayerLeftListener(_playerLeftCallback);
+
+    _enemiesUpdateCallback = (data) {
+      if (!mounted) return;
+      final enemyList = data as List<dynamic>;
+      print('Received enemies:update with ${enemyList.length} enemies');
+      setState(() {
+        // Update enemies from server
+        for (var enemyData in enemyList) {
+          final enemyJson = enemyData as Map<String, dynamic>;
+          final enemyId = enemyJson['id'] as String;
+          
+          // Find existing enemy or create new one
+          Enemy? existingEnemy;
+          try {
+            existingEnemy = _enemies.firstWhere((e) => e.id == enemyId);
+          } catch (e) {
+            // Enemy doesn't exist, create it
+            existingEnemy = Enemy(
+              id: enemyId,
+              x: (enemyJson['x'] as num).toDouble(),
+              y: (enemyJson['y'] as num).toDouble(),
+              spriteType: enemyJson['spriteType'] as String,
+            );
+            _enemies.add(existingEnemy);
+          }
+          
+          // Update enemy state from server
+          existingEnemy.x = (enemyJson['x'] as num).toDouble();
+          existingEnemy.y = (enemyJson['y'] as num).toDouble();
+          existingEnemy.currentHp = (enemyJson['currentHp'] as num).toDouble();
+          existingEnemy.maxHp = (enemyJson['maxHp'] as num).toDouble();
+          existingEnemy.isMoving = enemyJson['isMoving'] as bool? ?? false;
+          existingEnemy.moveDirectionX = (enemyJson['moveDirectionX'] as num?)?.toDouble() ?? 0.0;
+          existingEnemy.moveDirectionY = (enemyJson['moveDirectionY'] as num?)?.toDouble() ?? 0.0;
+          
+          // Update last rotation angle for zombie enemies
+          if (existingEnemy.spriteType == 'enemy-5' && enemyJson['lastRotationAngle'] != null) {
+            final lastRotationAngle = (enemyJson['lastRotationAngle'] as num).toDouble();
+            existingEnemy.setLastRotationAngle(lastRotationAngle);
+          }
+        }
+        
+        // Remove enemies that are no longer in server state
+        final serverEnemyIds = enemyList.map((e) => (e as Map<String, dynamic>)['id'] as String).toSet();
+        _enemies.removeWhere((e) => !serverEnemyIds.contains(e.id));
+        
+        _repaintCounter++;
+        print('Enemies list now has ${_enemies.length} enemies');
+        for (var enemy in _enemies) {
+          print('  - Enemy ${enemy.id}: ${enemy.spriteType} at (${enemy.x}, ${enemy.y}), HP: ${enemy.currentHp}/${enemy.maxHp}');
+        }
+      });
+    };
+    _gameService.addEnemiesUpdateListener(_enemiesUpdateCallback);
+    print('Enemy update listener registered');
+
+    _enemyDamagedCallback = (data) {
+      if (!mounted) return;
+      final enemyId = data['enemyId'] as String;
+      final currentHp = (data['currentHp'] as num).toDouble();
+      
+      try {
+        final enemy = _enemies.firstWhere((e) => e.id == enemyId);
+        setState(() {
+          enemy.currentHp = currentHp;
+          // Remove target if enemy died
+          if (enemy.currentHp <= 0 && _targetedEnemyId == enemyId) {
+            _targetedEnemyId = null;
+          }
+          _repaintCounter++;
+        });
+      } catch (e) {
+        // Enemy not found, ignore
+      }
+    };
+    _gameService.addEnemyDamagedListener(_enemyDamagedCallback);
+
+    _enemyDeathCallback = (data) {
+      if (!mounted) return;
+      final enemyId = data['enemyId'] as String;
+      final playerId = data['playerId'] as String;
+      final x = (data['x'] as num).toDouble();
+      final y = (data['y'] as num).toDouble();
+      
+      setState(() {
+        // Remove enemy
+        _enemies.removeWhere((e) => e.id == enemyId);
+        
+        // Remove target if it was targeted
+        if (_targetedEnemyId == enemyId) {
+          _targetedEnemyId = null;
+        }
+        
+        // Give exp and spawn gold if this player killed it
+        if (playerId == _currentCharacterId) {
+          _playerExp += 10;
+          _updatePlayerLevel();
+          
+          // Show floating text for exp at player position
+          _floatingTexts.add(FloatingText(
+            id: 'floating_text_${_floatingTextIdCounter++}',
+            x: _playerX,
+            y: _playerY,
+            text: '10 xp',
+          ));
+          
+          // Spawn gold coin (1 gold)
+          _goldCoins.add(GoldCoin(
+            id: 'gold_coin_${_goldCoinIdCounter++}',
+            x: x,
+            y: y,
+            amount: 1,
+          ));
+        }
+        
+        _repaintCounter++;
+      });
+    };
+    _gameService.addEnemyDeathListener(_enemyDeathCallback);
   }
 
   void _updateMovement() {
@@ -648,6 +820,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       setState(() {
         _playerX += deltaX;
         _playerY += deltaY;
+        
+        // Update movement direction for rotation
+        _playerLastMoveX = deltaX;
+        _playerLastMoveY = deltaY;
+        // Calculate rotation angle (default facing down/south, so subtract pi/2)
+        // atan2(y, x): 0 = right, π/2 = down, π = left, -π/2 = up
+        // Since default is down, we subtract π/2 to account for that
+        _playerLastRotationAngle = atan2(deltaY, deltaX) - (pi / 2);
         
         if (newVerticalDirection != null) {
           _lastVerticalDirection = newVerticalDirection;
@@ -714,29 +894,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     }
   }
   
-  void _updateEnemies() {
-    bool needsUpdate = false;
-    
-    for (var enemy in _enemies) {
-      final oldX = enemy.x;
-      final oldY = enemy.y;
-      enemy.update(_random);
-      
-      // Clamp enemy position to world bounds
-      enemy.x = enemy.x.clamp(_worldMinX, _worldMaxX);
-      enemy.y = enemy.y.clamp(_worldMinY, _worldMaxY);
-      
-      if ((enemy.x - oldX).abs() > 0.01 || (enemy.y - oldY).abs() > 0.01) {
-        needsUpdate = true;
-      }
-    }
-    
-    if (needsUpdate && mounted) {
-      setState(() {
-        _repaintCounter++;
-      });
-    }
-  }
+  // Enemies are now updated from server, no local update needed
   
   bool _isEnemyVisible(Enemy enemy) {
     final screenX = _worldToScreenX(enemy.x);
@@ -815,7 +973,10 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           
           // If within enemy hitbox (using player size as reference)
           if (distance < _playerSize) {
-            enemiesToDamage[enemy.id] = (enemiesToDamage[enemy.id] ?? 0) + projectile.damage;
+            // Send damage to server instead of applying locally
+            if (_currentCharacterId != null) {
+              _gameService.sendProjectileDamage(enemy.id, projectile.damage, _currentCharacterId!);
+            }
             projectilesToRemove.add(projectile);
             needsUpdate = true;
             break;
@@ -845,16 +1006,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     }
     
-    // Apply damage to enemies
-    for (var entry in enemiesToDamage.entries) {
-      final enemy = _enemies.firstWhere((e) => e.id == entry.key);
-      enemy.currentHp = (enemy.currentHp - entry.value).clamp(0.0, enemy.maxHp);
-      
-      // If enemy dies, remove target if it was targeted
-      if (enemy.currentHp <= 0 && _targetedEnemyId == enemy.id) {
-        _targetedEnemyId = null;
-      }
-    }
+    // Damage is now handled server-side, no local damage application needed
     
     // Remove projectiles that hit or went off-screen
     _projectiles.removeWhere((p) => projectilesToRemove.contains(p));
@@ -864,6 +1016,268 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         _repaintCounter++;
       });
     }
+  }
+  
+  int _getExpForCurrentLevel() {
+    int totalExpNeeded = 0;
+    for (int level = 1; level < _playerLevel; level++) {
+      totalExpNeeded += (_expPerLevel * level).toInt();
+    }
+    return totalExpNeeded;
+  }
+  
+  int _getExpForNextLevel() {
+    return _getExpForCurrentLevel() + (_expPerLevel * _playerLevel).toInt();
+  }
+  
+  void _checkGoldCollection() {
+    final double collectionRange = _playerSize * 1.5; // Slightly larger than player size
+    final goldToRemove = <GoldCoin>[];
+    bool needsUpdate = false;
+    
+    for (var gold in _goldCoins) {
+      // Remove expired gold coins
+      if (gold.isExpired) {
+        goldToRemove.add(gold);
+        needsUpdate = true;
+        continue;
+      }
+      
+      final dx = _playerX - gold.x;
+      final dy = _playerY - gold.y;
+      final distance = sqrt(dx * dx + dy * dy);
+      
+      if (distance < collectionRange) {
+        // Collect gold
+        _playerGold += gold.amount;
+        goldToRemove.add(gold);
+        needsUpdate = true;
+      }
+    }
+    
+    // Remove collected/expired gold
+    _goldCoins.removeWhere((g) => goldToRemove.contains(g));
+    
+    if (needsUpdate && mounted) {
+      setState(() {
+        _repaintCounter++;
+      });
+    }
+  }
+  
+  void _updateFloatingTexts() {
+    final textsToRemove = _floatingTexts.where((t) => t.isExpired).toList();
+    if (textsToRemove.isNotEmpty) {
+      _floatingTexts.removeWhere((t) => textsToRemove.contains(t));
+      if (mounted) {
+        setState(() {
+          _repaintCounter++;
+        });
+      }
+    }
+  }
+  
+  void _updatePlayerLevel() {
+    // Calculate required exp for current level
+    int requiredExp = 0;
+    for (int level = 1; level <= _playerLevel; level++) {
+      requiredExp += (_expPerLevel * level).toInt(); // Each level needs more exp
+    }
+    
+    // Level up if player has enough exp
+    while (_playerExp >= requiredExp) {
+      _playerLevel++;
+      requiredExp += (_expPerLevel * _playerLevel).toInt();
+    }
+  }
+  
+  Widget _buildCharacterInfo() {
+    final expForCurrent = _getExpForCurrentLevel();
+    final expForNext = _getExpForNextLevel();
+    final expInCurrentLevel = _playerExp - expForCurrent;
+    final expNeededForNext = expForNext - expForCurrent;
+    final expPercent = expNeededForNext > 0 
+        ? (expInCurrentLevel / expNeededForNext).clamp(0.0, 1.0)
+        : 1.0;
+    
+    final hpPercent = (_playerHp / _playerMaxHp).clamp(0.0, 1.0);
+    
+    // Get character sprite
+    ui.Image? characterSprite;
+    if (_currentSpriteType == 'char-1') {
+      characterSprite = _char1Sprite;
+    } else if (_currentSpriteType == 'char-2') {
+      characterSprite = _char2Sprite;
+    }
+    
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade700, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Character image
+          if (characterSprite != null)
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade800,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: CustomPaint(
+                painter: _CharacterImagePainter(characterSprite),
+                size: const Size(48, 48),
+              ),
+            ),
+          const SizedBox(width: 8),
+          // Character info
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Character name
+              Text(
+                _currentCharacterName ?? 'Unknown',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              // HP bar
+              SizedBox(
+                width: 200,
+                child: Stack(
+                  children: [
+                    // Background
+                    Container(
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade800,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    // Filled HP
+                    FractionallySizedBox(
+                      widthFactor: hpPercent,
+                      child: Container(
+                        height: 16,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              hpPercent > 0.6 
+                                  ? Colors.green 
+                                  : hpPercent > 0.3 
+                                      ? Colors.orange 
+                                      : Colors.red,
+                              hpPercent > 0.6 
+                                  ? Colors.green.shade400 
+                                  : hpPercent > 0.3 
+                                      ? Colors.orange.shade400 
+                                      : Colors.red.shade400,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    // Text overlay
+                    Container(
+                      height: 16,
+                      alignment: Alignment.center,
+                      child: Text(
+                        '${_playerHp.toInt()} / ${_playerMaxHp.toInt()}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black,
+                              blurRadius: 2.0,
+                              offset: Offset(1, 1),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              // Gold display
+              Text(
+                'Gold: $_playerGold',
+                style: TextStyle(
+                  color: Colors.amber.shade300,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              // Exp bar
+              SizedBox(
+                width: 200,
+                child: Stack(
+                  children: [
+                    // Background
+                    Container(
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade800,
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                    // Filled exp
+                    FractionallySizedBox(
+                      widthFactor: expPercent,
+                      child: Container(
+                        height: 14,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.blue.shade400,
+                              Colors.cyan.shade400,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                      ),
+                    ),
+                    // Text overlay
+                    Container(
+                      height: 14,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Lv.$_playerLevel  $expInCurrentLevel/$expNeededForNext',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black,
+                              blurRadius: 2.0,
+                              offset: Offset(1, 1),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
   
   void _targetNextEnemy() {
@@ -935,13 +1349,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     }
     
-    if (closestEnemy != null) {
-      _targetedEnemyId = closestEnemy.id;
-      if (mounted) {
-        setState(() {
-          _repaintCounter++;
-        });
-      }
+    if (mounted) {
+      setState(() {
+        // If clicked on an enemy, target it; otherwise clear target
+        if (closestEnemy != null) {
+          _targetedEnemyId = closestEnemy.id;
+        } else {
+          _targetedEnemyId = null;
+        }
+        _repaintCounter++;
+      });
     }
   }
 
@@ -994,17 +1411,28 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _enemy2Sprite,
                   _enemy3Sprite,
                   _enemy4Sprite,
+                  _zombie1Sprite,
                   _targetedEnemyId,
                   _playerHp,
                   _playerMaxHp,
                   _projectiles,
+                  _goldCoins,
+                  _floatingTexts,
+                  _playerLastRotationAngle,
                 ),
                 size: Size.infinite,
               ),
             ),
+            // Character info at top left
             Positioned(
               top: 16,
               left: 16,
+              child: _buildCharacterInfo(),
+            ),
+            // Menu button at top right, above player info
+            Positioned(
+              top: 16,
+              right: 16,
               child: IconButton(
                 onPressed: () {
                   setState(() {
@@ -1026,7 +1454,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             if (_showSettingsModal)
               _buildSettingsModal(),
             Positioned(
-              top: 16,
+              top: 80, // Moved down to make room for character info and menu
               right: 16,
               child: Container(
                 padding: const EdgeInsets.all(8),
@@ -1125,12 +1553,20 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     } else if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
                       _useAbility1();
                     } else if (key == LogicalKeyboardKey.escape) {
-                      setState(() {
-                        _showSettingsModal = !_showSettingsModal;
-                        _settingsView = null;
-                      });
-                      if (_showSettingsModal) {
-                        _refreshCharacters();
+                      // ESC clears target if one is selected, otherwise opens menu
+                      if (_targetedEnemyId != null) {
+                        setState(() {
+                          _targetedEnemyId = null;
+                          _repaintCounter++;
+                        });
+                      } else {
+                        setState(() {
+                          _showSettingsModal = !_showSettingsModal;
+                          _settingsView = null;
+                        });
+                        if (_showSettingsModal) {
+                          _refreshCharacters();
+                        }
                       }
                     }
                   } else if (event is KeyUpEvent) {
@@ -2308,6 +2744,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   Function(Map<String, dynamic>) _playerMovedCallback = (_) {};
   Function(Map<String, dynamic>) _playerLeftCallback = (_) {};
   Function(List<dynamic>) _playersListCallback = (_) {};
+  Function(List<dynamic>) _enemiesUpdateCallback = (_) {};
+  Function(Map<String, dynamic>) _enemyDamagedCallback = (_) {};
+  Function(Map<String, dynamic>) _enemyDeathCallback = (_) {};
 
   @override
   void dispose() {
@@ -2316,12 +2755,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _characterNameFocusNode?.dispose();
     _movementTimer?.cancel();
     _positionUpdateTimer?.cancel();
-    _enemyUpdateTimer?.cancel();
     _gameService.removeCallback(
       onPlayerJoined: _playerJoinedCallback,
       onPlayerMoved: _playerMovedCallback,
       onPlayerLeft: _playerLeftCallback,
       onPlayersList: _playersListCallback,
+      onEnemiesUpdate: _enemiesUpdateCallback,
+      onEnemyDamaged: _enemyDamagedCallback,
+      onEnemyDeath: _enemyDeathCallback,
     );
     super.dispose();
   }
@@ -2347,10 +2788,14 @@ class GameWorldPainter extends CustomPainter {
   final ui.Image? enemy2Sprite;
   final ui.Image? enemy3Sprite;
   final ui.Image? enemy4Sprite;
+  final ui.Image? zombie1Sprite; // Sprite sheet for enemy-5
   final String? targetedEnemyId;
   final double playerHp;
   final double playerMaxHp;
   final List<Projectile> projectiles;
+  final List<GoldCoin> goldCoins;
+  final List<FloatingText> floatingTexts;
+  final double currentPlayerRotationAngle;
   
   static const double _worldMinX = -5000.0;
   static const double _worldMaxX = 5000.0;
@@ -2377,10 +2822,14 @@ class GameWorldPainter extends CustomPainter {
     this.enemy2Sprite,
     this.enemy3Sprite,
     this.enemy4Sprite,
+    this.zombie1Sprite,
     this.targetedEnemyId,
     this.playerHp,
     this.playerMaxHp,
     this.projectiles,
+    this.goldCoins,
+    this.floatingTexts,
+    this.currentPlayerRotationAngle,
   );
 
   void _drawSprite(
@@ -2389,16 +2838,12 @@ class GameWorldPainter extends CustomPainter {
     double worldX,
     double worldY,
     double size,
-    PlayerDirection direction,
-  ) {
+    PlayerDirection direction, {
+    double? rotationAngle,
+  }) {
     Rect sourceRect;
-    if (direction == PlayerDirection.down) {
-      sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
-    } else if (direction == PlayerDirection.up) {
-      sourceRect = const Rect.fromLTWH(512, 0, 512, 512);
-    } else {
-      sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
-    }
+    // Use full sprite (800x800 image, no direction-based frames)
+    sourceRect = const Rect.fromLTWH(0, 0, 800, 800);
 
     final screenX = worldToScreenX(worldX);
     final screenY = worldToScreenY(worldY);
@@ -2411,7 +2856,18 @@ class GameWorldPainter extends CustomPainter {
     final paint = Paint()
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.high;
-    canvas.drawImageRect(sprite, sourceRect, destRect, paint);
+    
+    // Apply rotation if provided
+    if (rotationAngle != null) {
+      canvas.save();
+      canvas.translate(screenX, screenY);
+      canvas.rotate(rotationAngle);
+      canvas.translate(-screenX, -screenY);
+      canvas.drawImageRect(sprite, sourceRect, destRect, paint);
+      canvas.restore();
+    } else {
+      canvas.drawImageRect(sprite, sourceRect, destRect, paint);
+    }
   }
 
   ui.Image? _getSpriteForType(String spriteType) {
@@ -2432,6 +2888,8 @@ class GameWorldPainter extends CustomPainter {
       return enemy3Sprite;
     } else if (spriteType == 'enemy-4') {
       return enemy4Sprite;
+    } else if (spriteType == 'enemy-5') {
+      return zombie1Sprite;
     }
     return enemy1Sprite;
   }
@@ -2442,20 +2900,45 @@ class GameWorldPainter extends CustomPainter {
     double worldX,
     double worldY,
     double size,
+    Enemy enemy,
   ) {
     final screenX = worldToScreenX(worldX);
     final screenY = worldToScreenY(worldY);
     
-    final sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
+    Rect sourceRect;
+    if (enemy.spriteType == 'enemy-5') {
+      // Sprite sheet: 100x100 frames with 1px padding
+      // Frame index N starts at X = N * 101
+      final frameIndex = enemy.getCurrentAnimationFrame();
+      final frameX = (frameIndex * 101).toDouble(); // 100px sprite + 1px padding
+      sourceRect = Rect.fromLTWH(frameX, 0, 100, 100);
+    } else {
+      // Regular sprites: 512x512
+      sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
+    }
+    
     final destRect = Rect.fromCenter(
       center: Offset(screenX, screenY),
       width: size,
       height: size,
     );
+    
     final paint = Paint()
       ..isAntiAlias = true
       ..filterQuality = FilterQuality.high;
-    canvas.drawImageRect(sprite, sourceRect, destRect, paint);
+    
+    // Apply rotation for zombie enemy to face movement direction (or last direction when idle)
+    if (enemy.spriteType == 'enemy-5') {
+      final rotationAngle = enemy.getRotationAngle();
+      canvas.save();
+      canvas.translate(screenX, screenY);
+      canvas.rotate(rotationAngle);
+      canvas.translate(-screenX, -screenY);
+      canvas.drawImageRect(sprite, sourceRect, destRect, paint);
+      canvas.restore();
+    } else {
+      canvas.drawImageRect(sprite, sourceRect, destRect, paint);
+    }
   }
   
   void _drawHealthBar(
@@ -2603,7 +3086,24 @@ class GameWorldPainter extends CustomPainter {
         final sprite = _getSpriteForType(playerSpriteType);
         
         if (sprite != null) {
-          _drawSprite(canvas, sprite, player.x, player.y, playerSize, player.direction);
+          // Calculate rotation angle from direction (default facing down)
+          double rotationAngle = 0.0;
+          switch (player.direction) {
+            case PlayerDirection.down:
+              rotationAngle = 0.0; // Default facing down
+              break;
+            case PlayerDirection.right:
+              rotationAngle = -pi / 2; // Rotate 90 degrees clockwise
+              break;
+            case PlayerDirection.up:
+              rotationAngle = pi; // Rotate 180 degrees
+              break;
+            case PlayerDirection.left:
+              rotationAngle = pi / 2; // Rotate 90 degrees counter-clockwise
+              break;
+          }
+          _drawSprite(canvas, sprite, player.x, player.y, playerSize, player.direction,
+              rotationAngle: rotationAngle);
         } else {
           final screenX = worldToScreenX(player.x);
           final screenY = worldToScreenY(player.y);
@@ -2637,7 +3137,8 @@ class GameWorldPainter extends CustomPainter {
     if (currentPlayerId.isNotEmpty && currentPlayerName.isNotEmpty) {
       final currentSprite = _getSpriteForType(currentPlayerSpriteType);
       if (currentSprite != null) {
-        _drawSprite(canvas, currentSprite, playerX, playerY, playerSize, currentPlayerDirection);
+        _drawSprite(canvas, currentSprite, playerX, playerY, playerSize, currentPlayerDirection,
+            rotationAngle: currentPlayerRotationAngle);
       } else {
         final screenX = worldToScreenX(playerX);
         final screenY = worldToScreenY(playerY);
@@ -2672,6 +3173,9 @@ class GameWorldPainter extends CustomPainter {
     }
     
     // Draw enemies
+    if (enemies.isNotEmpty) {
+      print('GameWorldPainter: Drawing ${enemies.length} enemies');
+    }
     for (var enemy in enemies) {
       final isTargeted = targetedEnemyId == enemy.id;
       final enemySprite = _getEnemySpriteForType(enemy.spriteType);
@@ -2680,7 +3184,17 @@ class GameWorldPainter extends CustomPainter {
       
       // Draw targeting highlight (white dropshadow with blur) before the enemy sprite
       if (isTargeted && enemySprite != null) {
-        final sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
+        Rect sourceRect;
+        if (enemy.spriteType == 'enemy-5') {
+          // Sprite sheet: 100x100 frames with 1px padding
+          final frameIndex = enemy.getCurrentAnimationFrame();
+          final frameX = (frameIndex * 101).toDouble(); // 100px sprite + 1px padding
+          sourceRect = Rect.fromLTWH(frameX, 0, 100, 100);
+        } else {
+          // Regular sprites: 512x512
+          sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
+        }
+        
         final destRect = Rect.fromCenter(
           center: Offset(screenX, screenY),
           width: playerSize,
@@ -2696,12 +3210,24 @@ class GameWorldPainter extends CustomPainter {
         
         // Draw the sprite with white glow effect (draw it slightly larger for outline effect)
         final glowRect = destRect.inflate(4);
-        canvas.drawImageRect(enemySprite, sourceRect, glowRect, glowPaint);
+        
+        // Apply rotation for zombie enemy to face movement direction (or last direction when idle)
+        if (enemy.spriteType == 'enemy-5') {
+          final rotationAngle = enemy.getRotationAngle();
+          canvas.save();
+          canvas.translate(screenX, screenY);
+          canvas.rotate(rotationAngle);
+          canvas.translate(-screenX, -screenY);
+          canvas.drawImageRect(enemySprite, sourceRect, glowRect, glowPaint);
+          canvas.restore();
+        } else {
+          canvas.drawImageRect(enemySprite, sourceRect, glowRect, glowPaint);
+        }
       }
       
       // Draw the enemy sprite
       if (enemySprite != null) {
-        _drawEnemy(canvas, enemySprite, enemy.x, enemy.y, playerSize);
+        _drawEnemy(canvas, enemySprite, enemy.x, enemy.y, playerSize, enemy);
       } else {
         // Fallback: draw a red rectangle if sprite not loaded
         final enemyPaint = Paint()..color = Colors.red;
@@ -2770,6 +3296,72 @@ class GameWorldPainter extends CustomPainter {
         glowPaint,
       );
     }
+    
+    // Draw gold coins
+    for (var gold in goldCoins) {
+      final screenX = worldToScreenX(gold.x);
+      final screenY = worldToScreenY(gold.y);
+      
+      // Draw gold coin as an amber circle
+      final coinPaint = Paint()
+        ..color = Colors.amber
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(screenX, screenY),
+        8.0, // Coin radius
+        coinPaint,
+      );
+      
+      // Draw coin border
+      final borderPaint = Paint()
+        ..color = Colors.orange
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawCircle(
+        Offset(screenX, screenY),
+        8.0,
+        borderPaint,
+      );
+      
+      // Draw coin shine/glow
+      final shinePaint = Paint()
+        ..color = Colors.amber.shade200.withOpacity(0.5)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(screenX - 2, screenY - 2),
+        3.0,
+        shinePaint,
+      );
+    }
+    
+    // Draw floating texts
+    for (var text in floatingTexts) {
+      final screenX = worldToScreenX(text.x);
+      // Position text above player (subtract playerSize/2 to get top of player)
+      final screenY = worldToScreenY(text.y) - playerSize / 2 + text.offsetY;
+      
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: text.text,
+          style: TextStyle(
+            color: Colors.purple.withOpacity(text.opacity),
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(
+                color: Colors.black.withOpacity(text.opacity),
+                blurRadius: 3.0,
+                offset: const Offset(1, 1),
+              ),
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      final textX = screenX - textPainter.width / 2;
+      textPainter.paint(canvas, Offset(textX, screenY));
+    }
   }
 
   @override
@@ -2828,7 +3420,10 @@ class GameWorldPainter extends CustomPainter {
         oldDelegate.enemy1Sprite != enemy1Sprite ||
         oldDelegate.enemy2Sprite != enemy2Sprite ||
         oldDelegate.enemy3Sprite != enemy3Sprite ||
-        oldDelegate.enemy4Sprite != enemy4Sprite;
+        oldDelegate.enemy4Sprite != enemy4Sprite ||
+        oldDelegate.zombie1Sprite != zombie1Sprite ||
+        oldDelegate.goldCoins.length != goldCoins.length ||
+        oldDelegate.floatingTexts.length != floatingTexts.length;
   }
 }
 

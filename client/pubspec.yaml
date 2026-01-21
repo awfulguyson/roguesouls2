@@ -76,6 +76,7 @@ flutter:
     - assets/enemy-2.png
     - assets/enemy-3.png
     - assets/enemy-4.png
+    - assets/zombie-1-sprite.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

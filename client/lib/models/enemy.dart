@@ -27,6 +27,8 @@ class Enemy {
         return 'Earth Zombie';
       case 'enemy-4':
         return 'Air Zombie';
+      case 'enemy-5':
+        return 'Zombie';
       default:
         return 'Zombie';
     }
@@ -52,9 +54,81 @@ class Enemy {
         return 102.0;
       case 'enemy-4':
         return 103.0;
+      case 'enemy-5':
+        return 104.0;
       default:
         return 100.0;
     }
+  }
+  
+  // Animation frame tracking for sprite sheets
+  DateTime? _animationStartTime;
+  bool _wasMoving = false; // Track previous state to detect changes
+  double _lastRotationAngle = 0.0; // Store last rotation angle for idle zombies
+  static const Duration _frameDuration = Duration(milliseconds: 150); // ~6.67 fps
+  
+  // Setter for rotation angle (used when syncing from server)
+  void setLastRotationAngle(double angle) {
+    _lastRotationAngle = angle;
+  }
+  
+  int getCurrentAnimationFrame() {
+    if (spriteType != 'enemy-5') {
+      return 0; // Non-sprite-sheet enemies use frame 0
+    }
+    
+    final now = DateTime.now();
+    
+    // Reset animation if state changed
+    if (_wasMoving != isMoving) {
+      _animationStartTime = now;
+      _wasMoving = isMoving;
+    }
+    
+    if (_animationStartTime == null) {
+      _animationStartTime = now;
+    }
+    
+    final elapsed = now.difference(_animationStartTime!);
+    final frameIndex = (elapsed.inMilliseconds / _frameDuration.inMilliseconds).floor();
+    
+    if (isMoving) {
+      // Walking animation: frames 5-12 (8 frames, looping)
+      // Use a single walking frame for animation, rotation will be applied separately
+      return 5 + (frameIndex % 8);
+    } else {
+      // Idle animation: frame 0
+      return 0;
+    }
+  }
+  
+  // Get rotation angle in radians for sprite rotation
+  // Sprite faces East (right) by default
+  // Returns rotation angle needed to face movement direction
+  double getRotationAngle() {
+    if (spriteType != 'enemy-5') {
+      return 0.0; // No rotation for non-zombie enemies
+    }
+    
+    if (isMoving) {
+      // Calculate movement angle and store it
+      // atan2(y, x): 0 = right, π/2 = down, π = left, -π/2 = up
+      // Since sprite faces East (right) by default, rotation = movement angle
+      // Only update if direction vectors are non-zero to avoid resetting
+      if (moveDirectionX != 0.0 || moveDirectionY != 0.0) {
+        _lastRotationAngle = atan2(moveDirectionY, moveDirectionX);
+      }
+      return _lastRotationAngle;
+    } else {
+      // When idle, ALWAYS use last rotation angle to maintain facing direction
+      // This should never change unless the enemy starts moving again
+      return _lastRotationAngle;
+    }
+  }
+  
+  void resetAnimation() {
+    _animationStartTime = DateTime.now();
+    _wasMoving = isMoving;
   }
   
   void startMoving(Random random) {
@@ -64,13 +138,23 @@ class Enemy {
     moveDirectionY = sin(angle);
     isMoving = true;
     lastStateChangeTime = DateTime.now();
+    // Update rotation angle when starting to move
+    if (spriteType == 'enemy-5') {
+      _lastRotationAngle = atan2(moveDirectionY, moveDirectionX);
+    }
+    resetAnimation();
   }
   
   void stopMoving() {
+    // Store rotation angle BEFORE clearing direction vectors
+    if (spriteType == 'enemy-5' && (moveDirectionX != 0.0 || moveDirectionY != 0.0)) {
+      _lastRotationAngle = atan2(moveDirectionY, moveDirectionX);
+    }
     isMoving = false;
     moveDirectionX = 0.0;
     moveDirectionY = 0.0;
     lastStateChangeTime = DateTime.now();
+    resetAnimation();
   }
   
   void update(Random random) {

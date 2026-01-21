@@ -131,22 +131,16 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: ClipRect(
-                        child: FittedBox(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/char-1.png',
                           fit: BoxFit.cover,
-                          alignment: Alignment.topLeft,
-                          child: SizedBox(
-                            width: 1024,
-                            height: 512,
-                            child: Image.asset(
-                              'assets/char-1.png',
-                              fit: BoxFit.none,
-                              alignment: Alignment.topLeft,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Center(child: Text('char-1'));
-                              },
-                            ),
-                          ),
+                          width: 120,
+                          height: 120,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Center(child: Text('char-1'));
+                          },
                         ),
                       ),
                     ),
@@ -170,22 +164,16 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
                         ),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: ClipRect(
-                        child: FittedBox(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/char-2.png',
                           fit: BoxFit.cover,
-                          alignment: Alignment.topLeft,
-                          child: SizedBox(
-                            width: 1024,
-                            height: 512,
-                            child: Image.asset(
-                              'assets/char-2.png',
-                              fit: BoxFit.none,
-                              alignment: Alignment.topLeft,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Center(child: Text('char-2'));
-                              },
-                            ),
-                          ),
+                          width: 120,
+                          height: 120,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Center(child: Text('char-2'));
+                          },
                         ),
                       ),
                     ),

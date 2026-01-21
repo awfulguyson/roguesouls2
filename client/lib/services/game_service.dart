@@ -15,6 +15,9 @@ class GameService {
   final List<Function(Map<String, dynamic>)> _onPlayerLeftListeners = [];
   final List<Function(Map<String, dynamic>)> _onChatMessageListeners = [];
   final List<Function(List<dynamic>)> _onPlayersListListeners = [];
+  final List<Function(List<dynamic>)> _onEnemiesUpdateListeners = [];
+  final List<Function(Map<String, dynamic>)> _onEnemyDamagedListeners = [];
+  final List<Function(Map<String, dynamic>)> _onEnemyDeathListeners = [];
   
   // Add callback methods (for multiple listeners)
   void addPlayerJoinedListener(Function(Map<String, dynamic>) callback) {
@@ -44,6 +47,24 @@ class GameService {
   void addPlayersListListener(Function(List<dynamic>) callback) {
     if (!_onPlayersListListeners.contains(callback)) {
       _onPlayersListListeners.add(callback);
+    }
+  }
+  
+  void addEnemiesUpdateListener(Function(List<dynamic>) callback) {
+    if (!_onEnemiesUpdateListeners.contains(callback)) {
+      _onEnemiesUpdateListeners.add(callback);
+    }
+  }
+  
+  void addEnemyDamagedListener(Function(Map<String, dynamic>) callback) {
+    if (!_onEnemyDamagedListeners.contains(callback)) {
+      _onEnemyDamagedListeners.add(callback);
+    }
+  }
+  
+  void addEnemyDeathListener(Function(Map<String, dynamic>) callback) {
+    if (!_onEnemyDeathListeners.contains(callback)) {
+      _onEnemyDeathListeners.add(callback);
     }
   }
   
@@ -196,6 +217,25 @@ class GameService {
         listener(data as Map<String, dynamic>);
       }
     });
+
+    socket!.on('enemies:update', (data) {
+      print('GameService: Received enemies:update event with ${(data as List).length} enemies');
+      for (var listener in _onEnemiesUpdateListeners) {
+        listener(data as List<dynamic>);
+      }
+    });
+
+    socket!.on('enemy:damaged', (data) {
+      for (var listener in _onEnemyDamagedListeners) {
+        listener(data as Map<String, dynamic>);
+      }
+    });
+
+    socket!.on('enemy:death', (data) {
+      for (var listener in _onEnemyDeathListeners) {
+        listener(data as Map<String, dynamic>);
+      }
+    });
   }
 
   void joinGame(String characterId, String name, {String? spriteType, double? x, double? y}) {
@@ -216,6 +256,14 @@ class GameService {
 
   void sendChatMessage(String message) {
     socket?.emit('chat:message', {'message': message});
+  }
+
+  void sendProjectileDamage(String enemyId, double damage, String playerId) {
+    socket?.emit('projectile:damage', {
+      'enemyId': enemyId,
+      'damage': damage,
+      'playerId': playerId,
+    });
   }
 
   void _startKeepalive() {
@@ -281,12 +329,18 @@ class GameService {
     Function(Map<String, dynamic>)? onPlayerLeft,
     Function(Map<String, dynamic>)? onChatMessage,
     Function(List<dynamic>)? onPlayersList,
+    Function(List<dynamic>)? onEnemiesUpdate,
+    Function(Map<String, dynamic>)? onEnemyDamaged,
+    Function(Map<String, dynamic>)? onEnemyDeath,
   }) {
     if (onPlayerJoined != null) _onPlayerJoinedListeners.remove(onPlayerJoined);
     if (onPlayerMoved != null) _onPlayerMovedListeners.remove(onPlayerMoved);
     if (onPlayerLeft != null) _onPlayerLeftListeners.remove(onPlayerLeft);
     if (onChatMessage != null) _onChatMessageListeners.remove(onChatMessage);
     if (onPlayersList != null) _onPlayersListListeners.remove(onPlayersList);
+    if (onEnemiesUpdate != null) _onEnemiesUpdateListeners.remove(onEnemiesUpdate);
+    if (onEnemyDamaged != null) _onEnemyDamagedListeners.remove(onEnemyDamaged);
+    if (onEnemyDeath != null) _onEnemyDeathListeners.remove(onEnemyDeath);
   }
   
   // Method to clean up all callbacks without disconnecting
@@ -296,6 +350,9 @@ class GameService {
     _onPlayerLeftListeners.clear();
     _onChatMessageListeners.clear();
     _onPlayersListListeners.clear();
+    _onEnemiesUpdateListeners.clear();
+    _onEnemyDamagedListeners.clear();
+    _onEnemyDeathListeners.clear();
   }
 }
 
