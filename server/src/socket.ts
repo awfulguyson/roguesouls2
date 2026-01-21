@@ -1,4 +1,5 @@
 ﻿import { Server, Socket } from 'socket.io';
+import { charactersStore } from './routes';
 
 interface Player {
   id: string;
@@ -354,8 +355,31 @@ export function setupSocketIO(server: Server) {
 
     socket.on(
       'player:join',
-      (data: { characterId: string; name: string; spriteType?: string; x?: number; y?: number }) => {
+      (data: { characterId: string; name: string; spriteType?: string; x?: number; y?: number; accountId?: string }) => {
         const characterId = data.characterId;
+        const accountId = data.accountId;
+        
+        // Remove any dead characters from the same account from the game
+        if (accountId) {
+          const playersToRemove: string[] = [];
+          players.forEach((player, playerId) => {
+            if (playerId !== characterId) {
+              // Check if this player's character is dead and belongs to the same account
+              const character = charactersStore.get(playerId);
+              if (character && character.accountId === accountId && character.isDead) {
+                playersToRemove.push(playerId);
+                // Also remove from socketToCharacter map
+                const oldSocketId = player.socketId;
+                socketToCharacter.delete(oldSocketId);
+                // Broadcast player left
+                io.emit('player:left', { id: playerId });
+              }
+            }
+          });
+          // Remove dead characters
+          playersToRemove.forEach(playerId => players.delete(playerId));
+        }
+        
         const existingPlayer = players.get(characterId);
 
         if (existingPlayer) {

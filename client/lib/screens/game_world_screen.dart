@@ -161,6 +161,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   int _projectileIdCounter = 0;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
+  bool _showCharacterSelectModal = false;
   String? _settingsView;
   String _joystickMode = 'fixed-right';
   Offset? _floatingJoystickPosition;
@@ -326,6 +327,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       spriteType: _currentSpriteType ?? 'char-1',
       x: _playerX,
       y: _playerY,
+      accountId: _accountId,
     );
     _lastSentX = _playerX;
     _lastSentY = _playerY;
@@ -885,17 +887,15 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   print('Failed to mark character as dead: $e');
                 }
                 
-                // Navigate to character select
+                // Show character select modal
                 if (mounted) {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (context) => CharacterSelectScreen(
-                        accountId: _accountId ?? '',
-                        characters: [],
-                        isTemporary: true,
-                      ),
-                    ),
-                  );
+                  _refreshCharacters().then((_) {
+                    if (mounted) {
+                      setState(() {
+                        _showCharacterSelectModal = true;
+                      });
+                    }
+                  });
                 }
               }
             });
@@ -1635,9 +1635,26 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   child: Container(color: Colors.transparent),
                 ),
               ),
-            Container(
-              color: const Color(0xFF222222),
-              child: CustomPaint(
+            // Apply death filters to entire game content
+            ColorFiltered(
+              colorFilter: _isDead 
+                ? ColorFilter.mode(
+                    Colors.black.withOpacity(0.1),
+                    BlendMode.darken,
+                  )
+                : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+              child: ColorFiltered(
+                colorFilter: _isDead
+                  ? const ColorFilter.matrix([
+                      0.2126, 0.7152, 0.0722, 0, 0, // Red channel
+                      0.2126, 0.7152, 0.0722, 0, 0, // Green channel
+                      0.2126, 0.7152, 0.0722, 0, 0, // Blue channel
+                      0, 0, 0, 1, 0, // Alpha channel
+                    ])
+                  : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+                child: Container(
+                  color: const Color(0xFF222222),
+                  child: CustomPaint(
                 painter: GameWorldPainter(
                   _players,
                   _playerX,
@@ -1671,6 +1688,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
                 size: Size.infinite,
               ),
+                ),
+              ),
             ),
             // Character info at top left
             Positioned(
@@ -1702,47 +1721,55 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             ),
             if (_showSettingsModal)
               _buildSettingsModal(),
-            // Death overlay
+            if (_showCharacterSelectModal)
+              _buildCharacterSelectModal(),
+            // Death overlay - apply filters to entire screen
             if (_isDead)
               Positioned.fill(
-                child: ColorFiltered(
-                  colorFilter: ColorFilter.mode(
-                    Colors.black.withOpacity(0.1),
-                    BlendMode.darken,
-                  ),
-                  child: ColorFiltered(
-                    colorFilter: const ColorFilter.matrix([
-                      0.2126, 0.7152, 0.0722, 0, 0, // Red channel
-                      0.2126, 0.7152, 0.0722, 0, 0, // Green channel
-                      0.2126, 0.7152, 0.0722, 0, 0, // Blue channel
-                      0, 0, 0, 1, 0, // Alpha channel
-                    ]),
-                    child: Container(
-                      color: Colors.transparent,
-                      child: Center(
-                        child: Text(
-                          'YOU DIED',
-                          style: TextStyle(
-                            fontSize: 72,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red,
-                            shadows: [
-                              Shadow(
-                                offset: const Offset(0, 0),
-                                blurRadius: 20,
-                                color: Colors.white,
-                              ),
-                              Shadow(
-                                offset: const Offset(0, 0),
-                                blurRadius: 40,
-                                color: Colors.white.withOpacity(0.5),
-                              ),
-                            ],
-                          ),
+                child: Stack(
+                  children: [
+                    // Apply filters to entire background
+                    ColorFiltered(
+                      colorFilter: ColorFilter.mode(
+                        Colors.black.withOpacity(0.1),
+                        BlendMode.darken,
+                      ),
+                      child: ColorFiltered(
+                        colorFilter: const ColorFilter.matrix([
+                          0.2126, 0.7152, 0.0722, 0, 0, // Red channel
+                          0.2126, 0.7152, 0.0722, 0, 0, // Green channel
+                          0.2126, 0.7152, 0.0722, 0, 0, // Blue channel
+                          0, 0, 0, 1, 0, // Alpha channel
+                        ]),
+                        child: Container(
+                          color: Colors.transparent,
                         ),
                       ),
                     ),
-                  ),
+                    // Text on top
+                    Center(
+                      child: Text(
+                        'YOU DIED',
+                        style: TextStyle(
+                          fontSize: 72,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red,
+                          shadows: [
+                            Shadow(
+                              offset: const Offset(0, 0),
+                              blurRadius: 20,
+                              color: Colors.white,
+                            ),
+                            Shadow(
+                              offset: const Offset(0, 0),
+                              blurRadius: 40,
+                              color: Colors.white.withOpacity(0.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             Positioned(
@@ -2263,6 +2290,61 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     );
   }
 
+  Widget _buildCharacterSelectModal() {
+    return Center(
+      child: GestureDetector(
+        onTap: () {},
+        child: Container(
+          width: 300,
+          height: 500,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 10,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Select Character',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20),
+                      onPressed: () {
+                        setState(() {
+                          _showCharacterSelectModal = false;
+                          _selectedCharacter = null;
+                        });
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              Expanded(
+                child: _buildCharacterSelectContent(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCharacterSelectContent() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -2345,7 +2427,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                             child: Material(
                               color: Colors.transparent,
                               child: InkWell(
-                                onTap: () {
+                                onTap: char['isDead'] == true ? null : () {
                                   setState(() {
                                     _selectedCharacter = char;
                                   });

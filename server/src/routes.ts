@@ -13,7 +13,7 @@ interface Character {
   isDead?: boolean; // Track if character is dead
 }
 
-const charactersStore: Map<string, Character> = new Map();
+export const charactersStore: Map<string, Character> = new Map();
 const temporaryAccounts: Set<string> = new Set(); // Track temporary account IDs
 
 export function setupRoutes(app: Express) {

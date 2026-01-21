@@ -277,7 +277,7 @@ class GameService {
     });
   }
 
-  void joinGame(String characterId, String name, {String? spriteType, double? x, double? y}) {
+  void joinGame(String characterId, String name, {String? spriteType, double? x, double? y, String? accountId}) {
     print('Joining game: characterId=$characterId, name=$name, x=$x, y=$y');
     socket?.emit('player:join', {
       'characterId': characterId,
@@ -285,6 +285,7 @@ class GameService {
       'spriteType': spriteType,
       if (x != null) 'x': x,
       if (y != null) 'y': y,
+      if (accountId != null) 'accountId': accountId,
     });
     print('player:join event emitted');
   }
