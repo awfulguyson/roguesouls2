@@ -430,6 +430,17 @@ export function setupSocketIO(server: Server) {
       const currentDamage = enemy.damageDealtBy.get(data.playerId) || 0;
       enemy.damageDealtBy.set(data.playerId, currentDamage + data.damage);
 
+      // Update target immediately if this player now has the most damage
+      let maxDamage = currentDamage + data.damage;
+      let topDamager: string | null = data.playerId;
+      enemy.damageDealtBy.forEach((damage, playerId) => {
+        if (damage > maxDamage) {
+          maxDamage = damage;
+          topDamager = playerId;
+        }
+      });
+      enemy.targetPlayerId = topDamager;
+
       const wasAlive = enemy.currentHp > 0;
       enemy.currentHp = Math.max(0, enemy.currentHp - data.damage);
 
@@ -440,14 +451,35 @@ export function setupSocketIO(server: Server) {
         maxHp: enemy.maxHp,
       });
 
-      // If enemy dies, remove it and broadcast
+      // If enemy dies, remove it and broadcast loot to all players who dealt damage
       if (wasAlive && enemy.currentHp <= 0) {
+        // Calculate total damage dealt
+        let totalDamage = 0;
+        enemy.damageDealtBy.forEach((damage) => {
+          totalDamage += damage;
+        });
+
+        // Give currency to all players based on damage dealt (1 damage = 1 copper)
+        const lootDrops: Array<{ playerId: string; copper: number; x: number; y: number }> = [];
+        enemy.damageDealtBy.forEach((damage, playerId) => {
+          const copper = Math.floor(damage); // 1 damage = 1 copper
+          if (copper > 0) {
+            lootDrops.push({
+              playerId: playerId,
+              copper: copper,
+              x: enemy.x,
+              y: enemy.y,
+            });
+          }
+        });
+
         enemies.delete(enemy.id);
         io.emit('enemy:death', {
           enemyId: enemy.id,
           x: enemy.x,
           y: enemy.y,
-          playerId: data.playerId,
+          playerId: data.playerId, // Last hitter
+          lootDrops: lootDrops, // All players who dealt damage
         });
       }
     });

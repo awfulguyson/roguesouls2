@@ -9,7 +9,7 @@ import '../services/api_service.dart';
 import '../models/player.dart';
 import '../models/enemy.dart';
 import '../models/projectile.dart';
-import '../models/gold_coin.dart';
+import '../models/gold_coin.dart' show CurrencyCoin, CurrencyType;
 import '../models/floating_text.dart';
 import '../widgets/virtual_joystick.dart';
 import 'initial_screen.dart';
@@ -138,13 +138,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   int _playerLevel = 1;
   static const int _expPerLevel = 100; // Base exp needed per level
   
-  // Player gold
+  // Player currency (stored in base units: copper)
+  int _playerCopper = 0;
+  int _playerSilver = 0;
   int _playerGold = 0;
+  int _playerPlatinum = 0;
   
-  // Gold coins and floating text
-  final List<GoldCoin> _goldCoins = [];
+  // Currency coins and floating text
+  final List<CurrencyCoin> _currencyCoins = [];
   final List<FloatingText> _floatingTexts = [];
-  int _goldCoinIdCounter = 0;
+  int _currencyCoinIdCounter = 0;
   int _floatingTextIdCounter = 0;
   
   // Projectiles
@@ -281,7 +284,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _updateMovement();
       _interpolateOtherPlayers();
       _updateProjectiles(16 / 1000.0); // Convert milliseconds to seconds
-      _checkGoldCollection(); // Check for gold collection
+      _checkCurrencyCollection(); // Check for currency collection
       _updateFloatingTexts(); // Update floating text animations
     });
     
@@ -731,7 +734,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           _targetedEnemyId = null;
         }
         
-        // Give exp and spawn gold if this player killed it
+        // Give exp to last hitter
         if (playerId == _currentCharacterId) {
           _playerExp += 10;
           _updatePlayerLevel();
@@ -743,14 +746,47 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             y: _playerY,
             text: '10 xp',
           ));
-          
-          // Spawn gold coin (1 gold)
-          _goldCoins.add(GoldCoin(
-            id: 'gold_coin_${_goldCoinIdCounter++}',
-            x: x,
-            y: y,
-            amount: 1,
-          ));
+        }
+        
+        // Spawn currency coins for all players who dealt damage
+        final lootDrops = data['lootDrops'] as List<dynamic>?;
+        if (lootDrops != null) {
+          for (var loot in lootDrops) {
+            final lootData = loot as Map<String, dynamic>;
+            final lootPlayerId = lootData['playerId'] as String;
+            final copper = lootData['copper'] as int;
+            final lootX = (lootData['x'] as num).toDouble();
+            final lootY = (lootData['y'] as num).toDouble();
+            
+            // Convert copper to appropriate currency type
+            CurrencyType currencyType;
+            int currencyAmount;
+            if (copper >= 1000000) {
+              // Platinum (100 gold = 1 platinum)
+              currencyType = CurrencyType.platinum;
+              currencyAmount = copper ~/ 1000000;
+            } else if (copper >= 10000) {
+              // Gold (100 silver = 1 gold)
+              currencyType = CurrencyType.gold;
+              currencyAmount = copper ~/ 10000;
+            } else if (copper >= 100) {
+              // Silver (100 copper = 1 silver)
+              currencyType = CurrencyType.silver;
+              currencyAmount = copper ~/ 100;
+            } else {
+              // Copper
+              currencyType = CurrencyType.copper;
+              currencyAmount = copper;
+            }
+            
+            _currencyCoins.add(CurrencyCoin(
+              id: 'currency_coin_${_currencyCoinIdCounter++}',
+              x: lootX,
+              y: lootY,
+              type: currencyType,
+              amount: currencyAmount,
+            ));
+          }
         }
         
         _repaintCounter++;
@@ -1140,33 +1176,74 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     return _getExpForCurrentLevel() + (_expPerLevel * _playerLevel).toInt();
   }
   
-  void _checkGoldCollection() {
+  void _addCurrency(int copper) {
+    _playerCopper += copper;
+    // Auto-convert currency
+    while (_playerCopper >= 100) {
+      _playerCopper -= 100;
+      _playerSilver += 1;
+    }
+    while (_playerSilver >= 100) {
+      _playerSilver -= 100;
+      _playerGold += 1;
+    }
+    while (_playerGold >= 100) {
+      _playerGold -= 100;
+      _playerPlatinum += 1;
+    }
+  }
+  
+  String _getCurrencyDisplay() {
+    final parts = <String>[];
+    if (_playerPlatinum > 0) parts.add('${_playerPlatinum}P');
+    if (_playerGold > 0) parts.add('${_playerGold}G');
+    if (_playerSilver > 0) parts.add('${_playerSilver}S');
+    if (_playerCopper > 0) parts.add('${_playerCopper}C');
+    return parts.isEmpty ? '0C' : parts.join(' ');
+  }
+  
+  void _checkCurrencyCollection() {
     final double collectionRange = _playerSize * 1.5; // Slightly larger than player size
-    final goldToRemove = <GoldCoin>[];
+    final coinsToRemove = <CurrencyCoin>[];
     bool needsUpdate = false;
     
-    for (var gold in _goldCoins) {
-      // Remove expired gold coins
-      if (gold.isExpired) {
-        goldToRemove.add(gold);
+    for (var coin in _currencyCoins) {
+      // Remove expired coins
+      if (coin.isExpired) {
+        coinsToRemove.add(coin);
         needsUpdate = true;
         continue;
       }
       
-      final dx = _playerX - gold.x;
-      final dy = _playerY - gold.y;
+      final dx = _playerX - coin.x;
+      final dy = _playerY - coin.y;
       final distance = sqrt(dx * dx + dy * dy);
       
       if (distance < collectionRange) {
-        // Collect gold
-        _playerGold += gold.amount;
-        goldToRemove.add(gold);
+        // Collect currency based on type
+        int copperToAdd = 0;
+        switch (coin.type) {
+          case CurrencyType.copper:
+            copperToAdd = coin.amount;
+            break;
+          case CurrencyType.silver:
+            copperToAdd = coin.amount * 100;
+            break;
+          case CurrencyType.gold:
+            copperToAdd = coin.amount * 10000; // 100 * 100
+            break;
+          case CurrencyType.platinum:
+            copperToAdd = coin.amount * 1000000; // 100 * 100 * 100
+            break;
+        }
+        _addCurrency(copperToAdd);
+        coinsToRemove.add(coin);
         needsUpdate = true;
       }
     }
     
-    // Remove collected/expired gold
-    _goldCoins.removeWhere((g) => goldToRemove.contains(g));
+    // Remove collected/expired coins
+    _currencyCoins.removeWhere((c) => coinsToRemove.contains(c));
     
     if (needsUpdate && mounted) {
       setState(() {
@@ -1321,9 +1398,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              // Gold display
+              // Currency display
               Text(
-                'Gold: $_playerGold',
+                _getCurrencyDisplay(),
                 style: TextStyle(
                   color: Colors.amber.shade300,
                   fontSize: 12,
@@ -1527,7 +1604,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _playerMaxHp,
                   _playerLevel,
                   _projectiles,
-                  _goldCoins,
+                  _currencyCoins,
                   _floatingTexts,
                   _playerLastRotationAngle,
                 ),
@@ -2908,7 +2985,7 @@ class GameWorldPainter extends CustomPainter {
   final double playerMaxHp;
   final int playerLevel;
   final List<Projectile> projectiles;
-  final List<GoldCoin> goldCoins;
+  final List<CurrencyCoin> currencyCoins;
   final List<FloatingText> floatingTexts;
   final double currentPlayerRotationAngle;
   
@@ -2943,7 +3020,7 @@ class GameWorldPainter extends CustomPainter {
     this.playerMaxHp,
     this.playerLevel,
     this.projectiles,
-    this.goldCoins,
+    this.currencyCoins,
     this.floatingTexts,
     this.currentPlayerRotationAngle,
   );
@@ -3506,14 +3583,14 @@ class GameWorldPainter extends CustomPainter {
       );
     }
     
-    // Draw gold coins
-    for (var gold in goldCoins) {
-      final screenX = worldToScreenX(gold.x);
-      final screenY = worldToScreenY(gold.y);
+    // Draw currency coins
+    for (var coin in currencyCoins) {
+      final screenX = worldToScreenX(coin.x);
+      final screenY = worldToScreenY(coin.y);
       
-      // Draw gold coin as an amber circle
+      // Draw currency coin with color based on type
       final coinPaint = Paint()
-        ..color = Colors.amber
+        ..color = Color(coin.color)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(
         Offset(screenX, screenY),
@@ -3523,7 +3600,7 @@ class GameWorldPainter extends CustomPainter {
       
       // Draw coin border
       final borderPaint = Paint()
-        ..color = Colors.orange
+        ..color = Color(coin.color).withOpacity(0.7)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
       canvas.drawCircle(
@@ -3534,7 +3611,7 @@ class GameWorldPainter extends CustomPainter {
       
       // Draw coin shine/glow
       final shinePaint = Paint()
-        ..color = Colors.amber.shade200.withOpacity(0.5)
+        ..color = Color(coin.color).withOpacity(0.3)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(
         Offset(screenX - 2, screenY - 2),
@@ -3631,7 +3708,7 @@ class GameWorldPainter extends CustomPainter {
         oldDelegate.enemy3Sprite != enemy3Sprite ||
         oldDelegate.enemy4Sprite != enemy4Sprite ||
         oldDelegate.zombie1Sprite != zombie1Sprite ||
-        oldDelegate.goldCoins.length != goldCoins.length ||
+        oldDelegate.currencyCoins.length != currencyCoins.length ||
         oldDelegate.floatingTexts.length != floatingTexts.length;
   }
 }
