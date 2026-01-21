@@ -650,7 +650,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     _enemiesUpdateCallback = (data) {
       if (!mounted) return;
       final enemyList = data as List<dynamic>;
-      print('Received enemies:update with ${enemyList.length} enemies');
       setState(() {
         // Update enemies from server
         for (var enemyData in enemyList) {
@@ -693,14 +692,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         _enemies.removeWhere((e) => !serverEnemyIds.contains(e.id));
         
         _repaintCounter++;
-        print('Enemies list now has ${_enemies.length} enemies');
-        for (var enemy in _enemies) {
-          print('  - Enemy ${enemy.id}: ${enemy.spriteType} at (${enemy.x}, ${enemy.y}), HP: ${enemy.currentHp}/${enemy.maxHp}');
-        }
       });
     };
     _gameService.addEnemiesUpdateListener(_enemiesUpdateCallback);
-    print('Enemy update listener registered');
 
     _enemyDamagedCallback = (data) {
       if (!mounted) return;
@@ -765,6 +759,67 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       });
     };
     _gameService.addEnemyDeathListener(_enemyDeathCallback);
+
+    // Listen for new enemy spawns
+    _gameService.socket?.on('enemy:spawn', (data) {
+      if (!mounted) return;
+      final enemyJson = data as Map<String, dynamic>;
+      final enemyId = enemyJson['id'] as String;
+      
+      // Check if enemy already exists
+      if (_enemies.any((e) => e.id == enemyId)) {
+        return;
+      }
+      
+      final newEnemy = Enemy(
+        id: enemyId,
+        x: (enemyJson['x'] as num).toDouble(),
+        y: (enemyJson['y'] as num).toDouble(),
+        spriteType: enemyJson['spriteType'] as String,
+      );
+      
+      // Update enemy state from server
+      newEnemy.currentHp = (enemyJson['currentHp'] as num).toDouble();
+      newEnemy.maxHp = (enemyJson['maxHp'] as num).toDouble();
+      newEnemy.isMoving = enemyJson['isMoving'] as bool? ?? false;
+      newEnemy.moveDirectionX = (enemyJson['moveDirectionX'] as num?)?.toDouble() ?? 0.0;
+      newEnemy.moveDirectionY = (enemyJson['moveDirectionY'] as num?)?.toDouble() ?? 0.0;
+      
+      if (newEnemy.spriteType == 'enemy-5' && enemyJson['lastRotationAngle'] != null) {
+        final lastRotationAngle = (enemyJson['lastRotationAngle'] as num).toDouble();
+        newEnemy.setLastRotationAngle(lastRotationAngle);
+      }
+      
+      setState(() {
+        _enemies.add(newEnemy);
+        _repaintCounter++;
+      });
+    });
+
+    _projectileSpawnCallback = (data) {
+      if (!mounted) return;
+      // Only add projectiles from other players (not our own)
+      final playerId = data['playerId'] as String;
+      if (playerId == _currentCharacterId) {
+        return; // We already created this projectile locally
+      }
+      
+      final projectile = Projectile(
+        id: data['id'] as String,
+        x: (data['x'] as num).toDouble(),
+        y: (data['y'] as num).toDouble(),
+        targetX: (data['targetX'] as num).toDouble(),
+        targetY: (data['targetY'] as num).toDouble(),
+        speed: (data['speed'] as num).toDouble(),
+        damage: 10.0, // Default damage
+      );
+      
+      setState(() {
+        _projectiles.add(projectile);
+        _repaintCounter++;
+      });
+    };
+    _gameService.addProjectileSpawnListener(_projectileSpawnCallback);
   }
 
   void _updateMovement() {
@@ -944,6 +999,19 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       speed: 500.0,
       damage: 10.0,
     );
+    
+    // Send projectile to server so other players can see it
+    if (_currentCharacterId != null) {
+      _gameService.sendProjectileCreate(
+        projectile.id,
+        projectile.x,
+        projectile.y,
+        projectile.targetX,
+        projectile.targetY,
+        projectile.speed,
+        _currentCharacterId!,
+      );
+    }
     
     _lastAbility1Use = now;
     
@@ -1415,6 +1483,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _targetedEnemyId,
                   _playerHp,
                   _playerMaxHp,
+                  _playerLevel,
                   _projectiles,
                   _goldCoins,
                   _floatingTexts,
@@ -2747,6 +2816,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   Function(List<dynamic>) _enemiesUpdateCallback = (_) {};
   Function(Map<String, dynamic>) _enemyDamagedCallback = (_) {};
   Function(Map<String, dynamic>) _enemyDeathCallback = (_) {};
+  Function(Map<String, dynamic>) _projectileSpawnCallback = (_) {};
 
   @override
   void dispose() {
@@ -2792,6 +2862,7 @@ class GameWorldPainter extends CustomPainter {
   final String? targetedEnemyId;
   final double playerHp;
   final double playerMaxHp;
+  final int playerLevel;
   final List<Projectile> projectiles;
   final List<GoldCoin> goldCoins;
   final List<FloatingText> floatingTexts;
@@ -2826,6 +2897,7 @@ class GameWorldPainter extends CustomPainter {
     this.targetedEnemyId,
     this.playerHp,
     this.playerMaxHp,
+    this.playerLevel,
     this.projectiles,
     this.goldCoins,
     this.floatingTexts,
@@ -3120,17 +3192,67 @@ class GameWorldPainter extends CustomPainter {
         
         final screenX = worldToScreenX(player.x);
         final screenY = worldToScreenY(player.y);
+        
+        // Draw player level to the left of HP bar
+        final levelText = TextPainter(
+          text: TextSpan(
+            text: '${player.level}',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: playerSize * 0.08,
+              fontWeight: FontWeight.bold,
+              shadows: [
+                Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black),
+                Shadow(offset: Offset(-1, -1), blurRadius: 2, color: Colors.black),
+              ],
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        );
+        levelText.layout();
+        levelText.paint(canvas, Offset(screenX - playerSize / 2 - levelText.width - 4, screenY - playerSize / 2 - 20));
+        
+        // Draw player health bar
+        _drawHealthBar(canvas, screenX, screenY, player.hp, player.maxHp, playerSize, false);
+        
+        // Draw player name (white with black shadow, above HP bar)
         final fontSize = playerSize * 0.1;
         final textPainter = TextPainter(
           text: TextSpan(
             text: player.name,
-            style: TextStyle(color: Colors.black, fontSize: fontSize),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: fontSize,
+              shadows: [
+                Shadow(
+                  offset: const Offset(1, 1),
+                  blurRadius: 2,
+                  color: Colors.black,
+                ),
+                Shadow(
+                  offset: const Offset(-1, -1),
+                  blurRadius: 2,
+                  color: Colors.black,
+                ),
+                Shadow(
+                  offset: const Offset(1, -1),
+                  blurRadius: 2,
+                  color: Colors.black,
+                ),
+                Shadow(
+                  offset: const Offset(-1, 1),
+                  blurRadius: 2,
+                  color: Colors.black,
+                ),
+              ],
+            ),
           ),
           textDirection: TextDirection.ltr,
         );
         textPainter.layout();
         final textX = screenX - textPainter.width / 2;
-        textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
+        // Position name above HP bar (HP bar is at screenY - playerSize/2 - 20, name goes above that)
+        textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - 40));
       }
     }
 
@@ -3156,26 +3278,69 @@ class GameWorldPainter extends CustomPainter {
       final screenX = worldToScreenX(playerX);
       final screenY = worldToScreenY(playerY);
       
+      // Draw player level to the left of HP bar
+      final levelText = TextPainter(
+        text: TextSpan(
+          text: '$playerLevel',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: playerSize * 0.08,
+            fontWeight: FontWeight.bold,
+            shadows: [
+              Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.black),
+              Shadow(offset: Offset(-1, -1), blurRadius: 2, color: Colors.black),
+            ],
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      levelText.layout();
+      levelText.paint(canvas, Offset(screenX - playerSize / 2 - levelText.width - 4, screenY - playerSize / 2 - 20));
+      
       // Draw player health bar
       _drawHealthBar(canvas, screenX, screenY, playerHp, playerMaxHp, playerSize, false);
       
+      // Draw player name (white with black shadow, above HP bar)
       final fontSize = playerSize * 0.1;
       final textPainter = TextPainter(
         text: TextSpan(
           text: currentPlayerName,
-          style: TextStyle(color: Colors.black, fontSize: fontSize),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: fontSize,
+            shadows: [
+              Shadow(
+                offset: const Offset(1, 1),
+                blurRadius: 2,
+                color: Colors.black,
+              ),
+              Shadow(
+                offset: const Offset(-1, -1),
+                blurRadius: 2,
+                color: Colors.black,
+              ),
+              Shadow(
+                offset: const Offset(1, -1),
+                blurRadius: 2,
+                color: Colors.black,
+              ),
+              Shadow(
+                offset: const Offset(-1, 1),
+                blurRadius: 2,
+                color: Colors.black,
+              ),
+            ],
+          ),
         ),
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
       final textX = screenX - textPainter.width / 2;
-      textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - fontSize * 1.2));
+      // Position name above HP bar
+      textPainter.paint(canvas, Offset(textX, screenY - playerSize / 2 - 40));
     }
     
     // Draw enemies
-    if (enemies.isNotEmpty) {
-      print('GameWorldPainter: Drawing ${enemies.length} enemies');
-    }
     for (var enemy in enemies) {
       final isTargeted = targetedEnemyId == enemy.id;
       final enemySprite = _getEnemySpriteForType(enemy.spriteType);

@@ -18,6 +18,7 @@ class GameService {
   final List<Function(List<dynamic>)> _onEnemiesUpdateListeners = [];
   final List<Function(Map<String, dynamic>)> _onEnemyDamagedListeners = [];
   final List<Function(Map<String, dynamic>)> _onEnemyDeathListeners = [];
+  final List<Function(Map<String, dynamic>)> _onProjectileSpawnListeners = [];
   
   // Add callback methods (for multiple listeners)
   void addPlayerJoinedListener(Function(Map<String, dynamic>) callback) {
@@ -65,6 +66,12 @@ class GameService {
   void addEnemyDeathListener(Function(Map<String, dynamic>) callback) {
     if (!_onEnemyDeathListeners.contains(callback)) {
       _onEnemyDeathListeners.add(callback);
+    }
+  }
+  
+  void addProjectileSpawnListener(Function(Map<String, dynamic>) callback) {
+    if (!_onProjectileSpawnListeners.contains(callback)) {
+      _onProjectileSpawnListeners.add(callback);
     }
   }
   
@@ -219,7 +226,6 @@ class GameService {
     });
 
     socket!.on('enemies:update', (data) {
-      print('GameService: Received enemies:update event with ${(data as List).length} enemies');
       for (var listener in _onEnemiesUpdateListeners) {
         listener(data as List<dynamic>);
       }
@@ -233,6 +239,12 @@ class GameService {
 
     socket!.on('enemy:death', (data) {
       for (var listener in _onEnemyDeathListeners) {
+        listener(data as Map<String, dynamic>);
+      }
+    });
+
+    socket!.on('projectile:spawn', (data) {
+      for (var listener in _onProjectileSpawnListeners) {
         listener(data as Map<String, dynamic>);
       }
     });
@@ -262,6 +274,18 @@ class GameService {
     socket?.emit('projectile:damage', {
       'enemyId': enemyId,
       'damage': damage,
+      'playerId': playerId,
+    });
+  }
+
+  void sendProjectileCreate(String projectileId, double x, double y, double targetX, double targetY, double speed, String playerId) {
+    socket?.emit('projectile:create', {
+      'id': projectileId,
+      'x': x,
+      'y': y,
+      'targetX': targetX,
+      'targetY': targetY,
+      'speed': speed,
       'playerId': playerId,
     });
   }
@@ -341,6 +365,7 @@ class GameService {
     if (onEnemiesUpdate != null) _onEnemiesUpdateListeners.remove(onEnemiesUpdate);
     if (onEnemyDamaged != null) _onEnemyDamagedListeners.remove(onEnemyDamaged);
     if (onEnemyDeath != null) _onEnemyDeathListeners.remove(onEnemyDeath);
+    // Note: projectile spawn listeners cleanup would go here if needed
   }
   
   // Method to clean up all callbacks without disconnecting
@@ -353,6 +378,7 @@ class GameService {
     _onEnemiesUpdateListeners.clear();
     _onEnemyDamagedListeners.clear();
     _onEnemyDeathListeners.clear();
+    _onProjectileSpawnListeners.clear();
   }
 }
 

@@ -12,6 +12,9 @@ class Player {
   double y;
   PlayerDirection direction;
   String? spriteType;
+  double hp;
+  double maxHp;
+  int level;
 
   Player({
     required this.id,
@@ -20,6 +23,9 @@ class Player {
     required this.y,
     this.direction = PlayerDirection.down,
     this.spriteType,
+    this.hp = 100.0,
+    this.maxHp = 100.0,
+    this.level = 1,
   });
 
   factory Player.fromJson(Map<String, dynamic> json) {
@@ -30,6 +36,9 @@ class Player {
       y: (json['y'] as num).toDouble(),
       direction: _directionFromString(json['direction'] as String? ?? 'down'),
       spriteType: json['spriteType'] as String?,
+      hp: (json['hp'] as num?)?.toDouble() ?? 100.0,
+      maxHp: (json['maxHp'] as num?)?.toDouble() ?? 100.0,
+      level: (json['level'] as int?) ?? 1,
     );
   }
 

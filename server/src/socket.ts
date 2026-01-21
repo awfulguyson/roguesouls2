@@ -29,61 +29,99 @@ const enemies: Map<string, Enemy> = new Map();
 
 let io: Server;
 
-// Initialize enemies on server startup
+let enemyIdCounter = 1;
+const maxEnemies = 50;
+
+// Initialize enemies on server startup - start with 20, spawn more over time
 function initializeEnemies() {
   enemies.clear();
+  enemyIdCounter = 1;
   
-  // Spawn 20 enemies within 1000 units of origin
+  // Spawn initial 20 enemies within 1000 units of origin
   const enemyTypes = ['enemy-1', 'enemy-2', 'enemy-3', 'enemy-4', 'enemy-5'];
-  const initialEnemies = [];
   
   for (let i = 1; i <= 20; i++) {
-    // Random position within -1000 to 1000 for both X and Y
-    const x = (Math.random() * 2000) - 1000; // -1000 to 1000
-    const y = (Math.random() * 2000) - 1000; // -1000 to 1000
-    // Cycle through enemy types
-    const spriteType = enemyTypes[(i - 1) % enemyTypes.length];
-    
-    initialEnemies.push({
-      id: `enemy_${i}`,
-      x: x,
-      y: y,
-      spriteType: spriteType,
-    });
+    spawnEnemy(enemyTypes);
   }
-
-  function getHpForSpriteType(spriteType: string): number {
-    switch (spriteType) {
-      case 'enemy-1': return 100.0;
-      case 'enemy-2': return 101.0;
-      case 'enemy-3': return 102.0;
-      case 'enemy-4': return 103.0;
-      case 'enemy-5': return 104.0;
-      default: return 100.0;
+  
+  // Spawn one enemy every 10 seconds until we reach maxEnemies
+  setInterval(() => {
+    if (enemies.size < maxEnemies) {
+      spawnEnemy(enemyTypes);
     }
-  }
+  }, 10000); // 10 seconds
+}
 
-  initialEnemies.forEach(enemyData => {
-    const maxHp = getHpForSpriteType(enemyData.spriteType);
-    enemies.set(enemyData.id, {
-      id: enemyData.id,
-      x: enemyData.x,
-      y: enemyData.y,
-      spriteType: enemyData.spriteType,
-      maxHp: maxHp,
-      currentHp: maxHp,
-      moveDirectionX: 0,
-      moveDirectionY: 0,
-      isMoving: false,
-      lastStateChangeTime: Date.now(),
-      lastRotationAngle: 0,
-    });
+function spawnEnemy(enemyTypes: string[]) {
+  // Random position within -1000 to 1000 for both X and Y
+  const x = (Math.random() * 2000) - 1000; // -1000 to 1000
+  const y = (Math.random() * 2000) - 1000; // -1000 to 1000
+  // Cycle through enemy types
+  const spriteType = enemyTypes[(enemyIdCounter - 1) % enemyTypes.length];
+  
+  const enemyId = `enemy_${enemyIdCounter++}`;
+
+  const maxHp = getHpForSpriteType(spriteType);
+  // Randomize initial state - some start moving, some start paused
+  const startMoving = Math.random() > 0.5;
+  let moveDirectionX = 0;
+  let moveDirectionY = 0;
+  let lastStateChangeTime = Date.now();
+  
+  if (startMoving) {
+    // Start moving in random direction
+    const angle = Math.random() * 2 * Math.PI;
+    moveDirectionX = Math.cos(angle);
+    moveDirectionY = Math.sin(angle);
+    // Randomize when they started (0 to 2000ms ago)
+    lastStateChangeTime = Date.now() - (Math.random() * 2000);
+  } else {
+    // Start paused, randomize when they paused (0 to 3000ms ago)
+    lastStateChangeTime = Date.now() - (Math.random() * 3000);
+  }
+  
+  enemies.set(enemyId, {
+    id: enemyId,
+    x: x,
+    y: y,
+    spriteType: spriteType,
+    maxHp: maxHp,
+    currentHp: maxHp,
+    moveDirectionX: moveDirectionX,
+    moveDirectionY: moveDirectionY,
+    isMoving: startMoving,
+    lastStateChangeTime: lastStateChangeTime,
+    lastRotationAngle: spriteType === 'enemy-5' ? Math.atan2(moveDirectionY, moveDirectionX) : 0,
   });
   
-  console.log(`Initialized ${enemies.size} enemies`);
-  if (enemies.size > 0) {
-    const firstEnemy = Array.from(enemies.values())[0];
-    console.log(`Sample enemy: ${firstEnemy.id} at (${firstEnemy.x}, ${firstEnemy.y})`);
+  // Broadcast new enemy to all clients
+  if (io) {
+    const enemy = enemies.get(enemyId);
+    if (enemy) {
+      io.emit('enemy:spawn', {
+        id: enemy.id,
+        x: enemy.x,
+        y: enemy.y,
+        spriteType: enemy.spriteType,
+        maxHp: enemy.maxHp,
+        currentHp: enemy.currentHp,
+        isMoving: enemy.isMoving,
+        moveDirectionX: enemy.moveDirectionX,
+        moveDirectionY: enemy.moveDirectionY,
+        lastRotationAngle: enemy.lastRotationAngle,
+      });
+    }
+  }
+}
+
+function getHpForSpriteType(spriteType: string): number {
+  switch (spriteType) {
+    case 'enemy-1': return 100.0;
+    case 'enemy-2': return 101.0;
+    case 'enemy-3': return 102.0;
+    case 'enemy-4': return 103.0;
+    case 'enemy-5': return 104.0;
+    default: return 100.0;
   }
 }
 
@@ -91,8 +129,8 @@ function initializeEnemies() {
 function updateEnemies() {
   const now = Date.now();
   const moveSpeed = 1.0;
-  const moveDuration = 1000; // 1 second
-  const pauseDuration = 2000; // 2 seconds
+  const moveDuration = 2000; // 2 seconds moving
+  const pauseDuration = 3000; // 3 seconds paused
 
   enemies.forEach((enemy, enemyId) => {
     if (!enemy.lastStateChangeTime) {
@@ -164,7 +202,6 @@ export function setupSocketIO(server: Server) {
     socket.emit('game:players', Array.from(players.values()));
     
     // Send current enemy state to newly connected client
-    console.log(`Client ${socket.id} connected. Current enemies count: ${enemies.size}`);
     if (enemies.size > 0) {
       const enemyArray = Array.from(enemies.values()).map(enemy => ({
         id: enemy.id,
@@ -179,9 +216,6 @@ export function setupSocketIO(server: Server) {
         lastRotationAngle: enemy.lastRotationAngle,
       }));
       socket.emit('enemies:update', enemyArray);
-      console.log(`Sent ${enemyArray.length} enemies to client ${socket.id}`);
-    } else {
-      console.log(`WARNING: No enemies to send to client ${socket.id}!`);
     }
 
     socket.on('game:requestPlayers', () => {
@@ -189,7 +223,6 @@ export function setupSocketIO(server: Server) {
     });
 
     socket.on('game:requestEnemies', () => {
-      console.log(`Client ${socket.id} requested enemies. Current count: ${enemies.size}`);
       if (enemies.size > 0) {
         const enemyArray = Array.from(enemies.values()).map(enemy => ({
           id: enemy.id,
@@ -204,9 +237,6 @@ export function setupSocketIO(server: Server) {
           lastRotationAngle: enemy.lastRotationAngle,
         }));
         socket.emit('enemies:update', enemyArray);
-        console.log(`Sent ${enemyArray.length} enemies to client ${socket.id} (requested)`);
-      } else {
-        console.log(`WARNING: No enemies to send to client ${socket.id} (requested)!`);
       }
     });
 
@@ -270,11 +300,24 @@ export function setupSocketIO(server: Server) {
       });
     });
 
+    // Handle projectile creation
+    socket.on('projectile:create', (data: { id: string; x: number; y: number; targetX: number; targetY: number; speed: number; playerId: string }) => {
+      // Broadcast projectile to all other clients
+      socket.broadcast.emit('projectile:spawn', {
+        id: data.id,
+        x: data.x,
+        y: data.y,
+        targetX: data.targetX,
+        targetY: data.targetY,
+        speed: data.speed,
+        playerId: data.playerId,
+      });
+    });
+
     // Handle projectile damage
     socket.on('projectile:damage', (data: { enemyId: string; damage: number; playerId: string }) => {
       const enemy = enemies.get(data.enemyId);
       if (!enemy) {
-        console.log(`Enemy ${data.enemyId} not found for damage`);
         return;
       }
 
@@ -297,7 +340,6 @@ export function setupSocketIO(server: Server) {
           y: enemy.y,
           playerId: data.playerId,
         });
-        console.log(`Enemy ${enemy.id} killed by player ${data.playerId}`);
       }
     });
 
