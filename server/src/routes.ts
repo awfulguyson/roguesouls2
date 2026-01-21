@@ -10,6 +10,7 @@ interface Character {
   positionY: number;
   createdAt: string;
   isTemporary?: boolean; // Track if character belongs to temporary account
+  isDead?: boolean; // Track if character is dead
 }
 
 const charactersStore: Map<string, Character> = new Map();
@@ -132,6 +133,28 @@ export function setupRoutes(app: Express) {
       res.json(accountCharacters);
     } catch (error) {
       console.error('Get characters error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Mark character as dead
+  app.patch('/api/characters/:characterId/dead', async (req: Request, res: Response) => {
+    try {
+      const characterId = req.params.characterId as string;
+      
+      if (!characterId) {
+        return res.status(400).json({ error: 'Character ID is required' });
+      }
+
+      const character = charactersStore.get(characterId);
+      if (!character) {
+        return res.status(404).json({ error: 'Character not found' });
+      }
+
+      character.isDead = true;
+      res.json({ success: true, message: 'Character marked as dead' });
+    } catch (error) {
+      console.error('Mark character dead error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

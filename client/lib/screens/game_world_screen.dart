@@ -13,6 +13,7 @@ import '../models/gold_coin.dart' show CurrencyCoin, CurrencyType;
 import '../models/floating_text.dart';
 import '../widgets/virtual_joystick.dart';
 import 'initial_screen.dart';
+import 'character_select_screen.dart';
 import 'dart:html' as html show window;
 
 class _TargetEnemyIntent extends Intent {
@@ -132,6 +133,9 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   // Player health
   double _playerHp = 100.0;
   double _playerMaxHp = 100.0;
+  bool _isDead = false;
+  DateTime? _deathTime;
+  Set<String> _aggroEnemyIds = {}; // Enemies targeting the current player
   
   // Player experience
   int _playerExp = 0;
@@ -866,6 +870,36 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         if (playerId == _currentCharacterId) {
           _playerHp = currentHp;
           _playerMaxHp = maxHp;
+          
+          // Check if player died
+          if (currentHp <= 0 && !_isDead) {
+            _isDead = true;
+            _deathTime = DateTime.now();
+            // Mark character as dead and navigate after 3 seconds
+            Future.delayed(const Duration(seconds: 3), () async {
+              if (mounted && _isDead && _currentCharacterId != null) {
+                // Mark character as dead via API
+                try {
+                  await _apiService.markCharacterDead(_currentCharacterId!);
+                } catch (e) {
+                  print('Failed to mark character as dead: $e');
+                }
+                
+                // Navigate to character select
+                if (mounted) {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(
+                      builder: (context) => CharacterSelectScreen(
+                        accountId: _accountId ?? '',
+                        characters: [],
+                        isTemporary: true,
+                      ),
+                    ),
+                  );
+                }
+              }
+            });
+          }
         }
         
         // Update other player HP
@@ -884,12 +918,38 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       final playerId = data['playerId'] as String;
       
       setState(() {
-        // If current player died, reset HP to max
+        // If current player died
         if (playerId == _currentCharacterId) {
-          _playerHp = _playerMaxHp;
+          _isDead = true;
+          _playerHp = 0;
+          _deathTime = DateTime.now();
+          // Mark character as dead and navigate after 3 seconds
+          Future.delayed(const Duration(seconds: 3), () async {
+            if (mounted && _isDead && _currentCharacterId != null) {
+              // Mark character as dead via API
+              try {
+                await _apiService.markCharacterDead(_currentCharacterId!);
+              } catch (e) {
+                print('Failed to mark character as dead: $e');
+              }
+              
+              // Navigate to character select
+              if (mounted) {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => CharacterSelectScreen(
+                      accountId: _accountId ?? '',
+                      characters: [],
+                      isTemporary: true,
+                    ),
+                  ),
+                );
+              }
+            }
+          });
         }
         
-        // Update other player HP to 0 or remove them
+        // Update other player HP to 0
         if (_players.containsKey(playerId)) {
           _players[playerId]!.hp = 0;
         }
@@ -1600,6 +1660,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   _enemy4Sprite,
                   _zombie1Sprite,
                   _targetedEnemyId,
+                  _aggroEnemyIds,
                   _playerHp,
                   _playerMaxHp,
                   _playerLevel,
@@ -1641,6 +1702,49 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             ),
             if (_showSettingsModal)
               _buildSettingsModal(),
+            // Death overlay
+            if (_isDead)
+              Positioned.fill(
+                child: ColorFiltered(
+                  colorFilter: ColorFilter.mode(
+                    Colors.black.withOpacity(0.1),
+                    BlendMode.darken,
+                  ),
+                  child: ColorFiltered(
+                    colorFilter: const ColorFilter.matrix([
+                      0.2126, 0.7152, 0.0722, 0, 0, // Red channel
+                      0.2126, 0.7152, 0.0722, 0, 0, // Green channel
+                      0.2126, 0.7152, 0.0722, 0, 0, // Blue channel
+                      0, 0, 0, 1, 0, // Alpha channel
+                    ]),
+                    child: Container(
+                      color: Colors.transparent,
+                      child: Center(
+                        child: Text(
+                          'YOU DIED',
+                          style: TextStyle(
+                            fontSize: 72,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                            shadows: [
+                              Shadow(
+                                offset: const Offset(0, 0),
+                                blurRadius: 20,
+                                color: Colors.white,
+                              ),
+                              Shadow(
+                                offset: const Offset(0, 0),
+                                blurRadius: 40,
+                                color: Colors.white.withOpacity(0.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               top: 80, // Moved down to make room for character info and menu
               right: 16,
@@ -2981,6 +3085,7 @@ class GameWorldPainter extends CustomPainter {
   final ui.Image? enemy4Sprite;
   final ui.Image? zombie1Sprite; // Sprite sheet for enemy-5
   final String? targetedEnemyId;
+  final Set<String> aggroEnemyIds;
   final double playerHp;
   final double playerMaxHp;
   final int playerLevel;
@@ -3016,6 +3121,7 @@ class GameWorldPainter extends CustomPainter {
     this.enemy4Sprite,
     this.zombie1Sprite,
     this.targetedEnemyId,
+    this.aggroEnemyIds,
     this.playerHp,
     this.playerMaxHp,
     this.playerLevel,
@@ -3464,9 +3570,48 @@ class GameWorldPainter extends CustomPainter {
     // Draw enemies
     for (var enemy in enemies) {
       final isTargeted = targetedEnemyId == enemy.id;
+      final hasAggro = aggroEnemyIds.contains(enemy.id);
       final enemySprite = _getEnemySpriteForType(enemy.spriteType);
       final screenX = worldToScreenX(enemy.x);
       final screenY = worldToScreenY(enemy.y);
+      
+      // Draw aggro highlight (red) if enemy is targeting player, but white takes priority
+      if (hasAggro && !isTargeted && enemySprite != null) {
+        Rect sourceRect;
+        if (enemy.spriteType == 'enemy-5') {
+          final frameIndex = enemy.getCurrentAnimationFrame();
+          final frameX = (frameIndex * 101).toDouble();
+          sourceRect = Rect.fromLTWH(frameX, 0, 100, 100);
+        } else {
+          sourceRect = const Rect.fromLTWH(0, 0, 512, 512);
+        }
+        
+        final destRect = Rect.fromCenter(
+          center: Offset(screenX, screenY),
+          width: playerSize,
+          height: playerSize,
+        );
+        
+        final aggroPaint = Paint()
+          ..isAntiAlias = true
+          ..filterQuality = FilterQuality.high
+          ..colorFilter = const ColorFilter.mode(Colors.red, BlendMode.srcATop)
+          ..imageFilter = ui.ImageFilter.blur(sigmaX: 2.0, sigmaY: 2.0);
+        
+        final aggroRect = destRect.inflate(4);
+        
+        if (enemy.spriteType == 'enemy-5') {
+          final rotationAngle = enemy.getRotationAngle();
+          canvas.save();
+          canvas.translate(screenX, screenY);
+          canvas.rotate(rotationAngle);
+          canvas.translate(-screenX, -screenY);
+          canvas.drawImageRect(enemySprite, sourceRect, aggroRect, aggroPaint);
+          canvas.restore();
+        } else {
+          canvas.drawImageRect(enemySprite, sourceRect, aggroRect, aggroPaint);
+        }
+      }
       
       // Draw targeting highlight (white dropshadow with blur) before the enemy sprite
       if (isTargeted && enemySprite != null) {

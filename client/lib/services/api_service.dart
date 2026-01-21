@@ -46,6 +46,17 @@ class ApiService {
     }
   }
 
+  Future<void> markCharacterDead(String characterId) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/api/characters/$characterId/dead'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to mark character as dead: ${response.body}');
+    }
+  }
+
   Future<void> deleteCharacter(String characterId) async {
     final response = await http.delete(
       Uri.parse('$baseUrl/api/characters/$characterId'),

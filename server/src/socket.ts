@@ -201,6 +201,19 @@ function updateEnemies() {
                 io.emit('player:death', {
                   playerId: targetPlayer.id,
                 });
+                
+                // Reset all enemies targeting this player
+                enemies.forEach((enemy) => {
+                  if (enemy.targetPlayerId === targetPlayer.id) {
+                    enemy.currentHp = enemy.maxHp; // Reset HP to full
+                    enemy.targetPlayerId = null;
+                    enemy.damageDealtBy.clear();
+                    enemy.isAttacking = false;
+                    enemy.isMoving = false;
+                    enemy.moveDirectionX = 0;
+                    enemy.moveDirectionY = 0;
+                  }
+                });
               }
             }
           }

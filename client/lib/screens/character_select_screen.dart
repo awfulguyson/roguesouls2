@@ -175,10 +175,12 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
                   itemCount: _characters.length,
                   itemBuilder: (context, index) {
                     final char = _characters[index];
+                    final isDead = char['isDead'] == true;
                     return Card(
                       elevation: 4,
+                      color: isDead ? Colors.grey.shade300 : null,
                       child: InkWell(
-                        onTap: () {
+                        onTap: isDead ? null : () {
                           Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
@@ -191,60 +193,77 @@ class _CharacterSelectScreenState extends State<CharacterSelectScreen> {
                             ),
                           );
                         },
-                        child: Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              // Character name (centered above sprite)
-                              Flexible(
-                                child: Text(
-                                  char['name'] as String,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                        child: ColorFiltered(
+                          colorFilter: isDead 
+                            ? const ColorFilter.mode(Colors.grey, BlendMode.saturation)
+                            : const ColorFilter.mode(Colors.transparent, BlendMode.dst),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Character name (centered above sprite)
+                                Flexible(
+                                  child: Text(
+                                    char['name'] as String,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDead ? Colors.grey.shade600 : null,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              // Sprite preview (800x800 image)
-                              SizedBox(
-                                width: 100,
-                                height: 100,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.grey.shade300),
+                                if (isDead) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'dead',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.red.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.asset(
-                                      'assets/${char['spriteType'] ?? 'char-1'}.png',
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return const Center(child: Icon(Icons.person));
-                                      },
+                                ],
+                                const SizedBox(height: 8),
+                                // Sprite preview (800x800 image)
+                                SizedBox(
+                                  width: 100,
+                                  height: 100,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.grey.shade300),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.asset(
+                                        'assets/${char['spriteType'] ?? 'char-1'}.png',
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return const Center(child: Icon(Icons.person));
+                                        },
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              IconButton(
-                                constraints: const BoxConstraints(),
-                                padding: EdgeInsets.zero,
-                                onPressed: () => _deleteCharacter(
-                                  char['id'] as String,
-                                  char['name'] as String,
+                                const SizedBox(height: 8),
+                                IconButton(
+                                  constraints: const BoxConstraints(),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: () => _deleteCharacter(
+                                    char['id'] as String,
+                                    char['name'] as String,
+                                  ),
+                                  icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                  tooltip: 'Delete character',
                                 ),
-                                icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                                tooltip: 'Delete character',
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
