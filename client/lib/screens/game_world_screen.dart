@@ -2465,12 +2465,31 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                                       ),
                                     ),
                                   ),
-                                  title: Text(
-                                    char['name'] as String,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                    ),
+                                  title: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          char['name'] as String,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                            color: char['isDead'] == true ? Colors.grey : null,
+                                          ),
+                                        ),
+                                      ),
+                                      if (char['isDead'] == true)
+                                        Padding(
+                                          padding: const EdgeInsets.only(left: 8),
+                                          child: Text(
+                                            'dead',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.red.shade700,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -2486,11 +2505,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           child: SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _selectedCharacter == null
+              onPressed: _selectedCharacter == null || (_selectedCharacter!['isDead'] == true)
                   ? null
                   : () {
                       if (_selectedCharacter != null) {
                         _loadCharacter(_selectedCharacter!);
+                        setState(() {
+                          _showCharacterSelectModal = false;
+                        });
                       }
                     },
               child: const Text('Play', style: TextStyle(fontSize: 12)),
