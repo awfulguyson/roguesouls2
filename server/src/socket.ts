@@ -121,6 +121,7 @@ function spawnEnemy(enemyTypes: string[]) {
         moveDirectionY: enemy.moveDirectionY,
         lastRotationAngle: enemy.lastRotationAngle,
         isAttacking: enemy.isAttacking,
+        targetPlayerId: enemy.targetPlayerId,
       });
     }
   }
