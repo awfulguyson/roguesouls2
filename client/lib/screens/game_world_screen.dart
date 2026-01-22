@@ -1691,12 +1691,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 ),
               ),
             ),
-            // Character info at top left
-            Positioned(
-              top: 16,
-              left: 16,
-              child: _buildCharacterInfo(),
-            ),
+            // Character info at top left (only show when character is loaded)
+            if (_currentCharacterId != null)
+              Positioned(
+                top: 16,
+                left: 16,
+                child: _buildCharacterInfo(),
+              ),
             // Menu button at top right, above player info
             Positioned(
               top: 16,
@@ -2249,22 +2250,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                           ListTile(
                             dense: true,
                             leading: const Icon(Icons.person, size: 20),
-                            title: Text(
+                            title: const Text(
                               'Select Character',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: _characters.isEmpty ? Colors.grey : null,
-                              ),
+                              style: TextStyle(fontSize: 14),
                             ),
-                            enabled: _characters.isNotEmpty,
-                            onTap: _characters.isEmpty
-                                ? null
-                                : () {
-                                    setState(() {
-                                      _settingsView = 'characterSelect';
-                                    });
-                                    _refreshCharacters();
-                                  },
+                            onTap: () {
+                              setState(() {
+                                _settingsView = 'characterSelect';
+                              });
+                              _refreshCharacters();
+                            },
                           ),
                           ListTile(
                             dense: true,
@@ -3074,10 +3069,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                           );
                           await _refreshCharacters();
                           if (mounted) {
-                            await _loadCharacter({
-                              'id': newCharacter['id'],
-                              'name': newCharacter['name'],
-                              'spriteType': newCharacter['spriteType'],
+                            // Close create modal and return to character select
+                            setState(() {
+                              _showCharacterCreateModal = false;
+                              _characterNameController?.clear();
+                              // Stay in character select view to select the new character
+                              if (_settingsView != 'characterSelect') {
+                                _settingsView = 'characterSelect';
+                              }
                             });
                           }
                         } catch (e) {

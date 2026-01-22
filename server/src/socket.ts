@@ -359,14 +359,15 @@ export function setupSocketIO(server: Server) {
         const characterId = data.characterId;
         const accountId = data.accountId;
         
-        // Remove any dead characters from the same account from the game
+        // Remove ALL other characters from the same account from the game
+        // Only the selected character should be controllable
         if (accountId) {
           const playersToRemove: string[] = [];
           players.forEach((player, playerId) => {
             if (playerId !== characterId) {
-              // Check if this player's character is dead and belongs to the same account
+              // Check if this player's character belongs to the same account
               const character = charactersStore.get(playerId);
-              if (character && character.accountId === accountId && character.isDead) {
+              if (character && character.accountId === accountId) {
                 playersToRemove.push(playerId);
                 // Also remove from socketToCharacter map
                 const oldSocketId = player.socketId;
@@ -376,7 +377,7 @@ export function setupSocketIO(server: Server) {
               }
             }
           });
-          // Remove dead characters
+          // Remove other characters from same account
           playersToRemove.forEach(playerId => players.delete(playerId));
         }
         
