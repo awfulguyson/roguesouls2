@@ -887,12 +887,13 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   print('Failed to mark character as dead: $e');
                 }
                 
-                // Show character select modal
+                // Show settings menu (same as pressing ESC)
                 if (mounted) {
                   _refreshCharacters().then((_) {
                     if (mounted) {
                       setState(() {
-                        _showCharacterSelectModal = true;
+                        _showSettingsModal = true;
+                        _settingsView = 'characterSelect';
                       });
                     }
                   });
@@ -933,17 +934,16 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 print('Failed to mark character as dead: $e');
               }
               
-              // Navigate to character select
+              // Show settings menu (same as pressing ESC)
               if (mounted) {
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) => CharacterSelectScreen(
-                      accountId: _accountId ?? '',
-                      characters: [],
-                      isTemporary: true,
-                    ),
-                  ),
-                );
+                _refreshCharacters().then((_) {
+                  if (mounted) {
+                    setState(() {
+                      _showSettingsModal = true;
+                      _settingsView = 'characterSelect';
+                    });
+                  }
+                });
               }
             }
           });
