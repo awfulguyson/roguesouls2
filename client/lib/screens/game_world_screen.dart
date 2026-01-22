@@ -2482,6 +2482,24 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     ),
         ),
         const Divider(),
+        // Create Character button (below character list, at top if no characters)
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () {
+                setState(() {
+                  _showCharacterCreateModal = true;
+                  _selectedCharacter = null;
+                });
+              },
+              child: const Text('Create Character', style: TextStyle(fontSize: 12)),
+            ),
+          ),
+        ),
+        const Divider(),
+        // Play button at the bottom
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: SizedBox(
@@ -2498,21 +2516,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                       }
                     },
               child: const Text('Play', style: TextStyle(fontSize: 12)),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () {
-                setState(() {
-                  _showCharacterCreateModal = true;
-                  _selectedCharacter = null;
-                });
-              },
-              child: const Text('Create Character', style: TextStyle(fontSize: 12)),
             ),
           ),
         ),
