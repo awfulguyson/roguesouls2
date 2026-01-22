@@ -3104,6 +3104,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
     setState(() {
       _showSettingsModal = false;
       _showCharacterCreateModal = false;
+      _showCharacterSelectModal = false;
       _settingsView = null;
       _selectedCharacter = null;
       
