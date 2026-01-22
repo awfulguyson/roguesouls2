@@ -162,7 +162,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   static const Duration _autoAttackCooldown = Duration(milliseconds: 500);
   int _projectileIdCounter = 0;
   bool _isAutoAttacking = false;
-  String? _autoAttackTargetId;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
   bool _showCharacterSelectModal = false;
@@ -215,6 +214,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           event.preventDefault();
           event.stopPropagation();
         }
+      }, true);
+      
+      // Prevent right-click context menu
+      html.window.document.addEventListener('contextmenu', (event) {
+        event.preventDefault();
+        return false;
       }, true);
     }
     
@@ -295,8 +300,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _updateProjectiles(16 / 1000.0); // Convert milliseconds to seconds
       _checkCurrencyCollection(); // Check for currency collection
       
-      // Auto-attack loop
-      if (_isAutoAttacking && _autoAttackTargetId != null) {
+      // Auto-attack loop (attacks selected target continuously)
+      if (_isAutoAttacking && _targetedEnemyId != null) {
         _useAutoAttack();
       }
       _updateFloatingTexts(); // Update floating text animations
@@ -1122,21 +1127,24 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       }
     }
     
-    // Need a targeted enemy to fire at
-    if (_autoAttackTargetId == null) {
+    // Need a targeted enemy to fire at (use selected target)
+    if (_targetedEnemyId == null) {
+      _isAutoAttacking = false;
       return;
     }
     
     // Find the targeted enemy
     final targetEnemy = _enemies.firstWhere(
-      (e) => e.id == _autoAttackTargetId,
+      (e) => e.id == _targetedEnemyId,
       orElse: () => throw StateError('Auto-attack target not found'),
     );
     
     // Only fire if enemy is visible and alive
     if (!_isEnemyVisible(targetEnemy) || targetEnemy.currentHp <= 0) {
       _isAutoAttacking = false;
-      _autoAttackTargetId = null;
+      setState(() {
+        _targetedEnemyId = null;
+      });
       return;
     }
     
@@ -1975,11 +1983,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   }
                 },
                 child: GestureDetector(
-                  onTapDown: (details) {
-                    _targetEnemyAtPosition(details.localPosition);
-                  },
-                  onSecondaryTapDown: (details) {
-                    // Right-click: start auto-attack
+                    onTapDown: (details) {
+                      _targetEnemyAtPosition(details.localPosition);
+                    },
+                    onSecondaryTapDown: (details) {
+                    // Right-click: start auto-attack (prevent default context menu)
                     final worldX = _screenToWorldX(details.localPosition.dx);
                     final worldY = _screenToWorldY(details.localPosition.dy);
                     
@@ -2005,7 +2013,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     if (closestEnemy != null) {
                       setState(() {
                         _isAutoAttacking = true;
-                        _autoAttackTargetId = closestEnemy!.id;
                         _targetedEnemyId = closestEnemy!.id;
                       });
                       // Fire immediately
@@ -2016,7 +2023,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                     // Stop auto-attack on right-click release
                     setState(() {
                       _isAutoAttacking = false;
-                      _autoAttackTargetId = null;
+                    });
+                  },
+                  onSecondaryTapCancel: () {
+                    // Stop auto-attack if right-click is cancelled
+                    setState(() {
+                      _isAutoAttacking = false;
                     });
                   },
                   child: gameContent,
@@ -3577,8 +3589,9 @@ class GameWorldPainter extends CustomPainter {
     double currentHp,
     double maxHp,
     double size,
-    bool isTargeted,
-  ) {
+    bool isTargeted, {
+    bool isEnemy = false,
+  }) {
     final hpBarWidth = size;
     final hpBarHeight = isTargeted ? 8.0 : 6.0;
     final hpBarY = screenY - size / 2 - (isTargeted ? 20.0 : 15.0);
@@ -3591,12 +3604,14 @@ class GameWorldPainter extends CustomPainter {
       bgPaint,
     );
     
-    // HP bar
-    final hpColor = hpPercent > 0.6 
-        ? Colors.green 
-        : hpPercent > 0.3 
-            ? Colors.orange 
-            : Colors.red;
+    // HP bar - enemies are always red, players are color-coded
+    final hpColor = isEnemy
+        ? Colors.red
+        : (hpPercent > 0.6 
+            ? Colors.green 
+            : hpPercent > 0.3 
+                ? Colors.orange 
+                : Colors.red);
     final hpPaint = Paint()..color = hpColor;
     canvas.drawRect(
       Rect.fromLTWH(screenX - hpBarWidth / 2, hpBarY, hpBarWidth * hpPercent, hpBarHeight),
@@ -3770,7 +3785,7 @@ class GameWorldPainter extends CustomPainter {
         levelText.paint(canvas, Offset(screenX - playerSize / 2 - levelText.width - 4, screenY - playerSize / 2 - 20));
         
         // Draw player health bar
-        _drawHealthBar(canvas, screenX, screenY, player.hp, player.maxHp, playerSize, false);
+        _drawHealthBar(canvas, screenX, screenY, player.hp, player.maxHp, playerSize, false, isEnemy: false);
         
         // Draw player name (white with black shadow, above HP bar)
         final fontSize = playerSize * 0.1;
@@ -3855,7 +3870,7 @@ class GameWorldPainter extends CustomPainter {
       levelText.paint(canvas, Offset(screenX - playerSize / 2 - levelText.width - 4, screenY - playerSize / 2 - 20));
       
       // Draw player health bar
-      _drawHealthBar(canvas, screenX, screenY, playerHp, playerMaxHp, playerSize, false);
+      _drawHealthBar(canvas, screenX, screenY, playerHp, playerMaxHp, playerSize, false, isEnemy: false);
       
       // Draw player name (white with black shadow, above HP bar)
       final fontSize = playerSize * 0.1;
@@ -4002,8 +4017,8 @@ class GameWorldPainter extends CustomPainter {
         );
       }
       
-      // Draw enemy health bar
-      _drawHealthBar(canvas, screenX, screenY, enemy.currentHp, enemy.maxHp, playerSize, isTargeted);
+      // Draw enemy health bar (always red)
+      _drawHealthBar(canvas, screenX, screenY, enemy.currentHp, enemy.maxHp, playerSize, isTargeted, isEnemy: true);
       
       // Draw enemy name
       final fontSize = isTargeted ? playerSize * 0.12 : playerSize * 0.1;
