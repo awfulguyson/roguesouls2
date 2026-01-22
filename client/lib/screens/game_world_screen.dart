@@ -1821,7 +1821,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                         },
                       ),
                     ),
-            if (_showCharacterCreateModal && !_showSettingsModal)
+            if (_showCharacterCreateModal)
               _buildCharacterCreateModal(),
             ],
           ),
