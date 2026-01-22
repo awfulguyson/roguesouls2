@@ -2507,7 +2507,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             child: OutlinedButton(
               onPressed: () {
                 setState(() {
-                  _settingsView = null;
                   _showCharacterCreateModal = true;
                   _selectedCharacter = null;
                 });
