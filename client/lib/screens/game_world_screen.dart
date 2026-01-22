@@ -1720,11 +1720,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                 tooltip: 'Menu',
               ),
             ),
-            if (_showSettingsModal)
-              _buildSettingsModal(),
-            if (_showCharacterSelectModal)
-              _buildCharacterSelectModal(),
-            // Death overlay - apply filters to entire screen
+            // Death overlay - apply filters to entire screen (behind menu)
             if (_isDead)
               Positioned.fill(
                 child: Stack(
@@ -1773,6 +1769,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   ],
                 ),
               ),
+            // Menu modals (on top of death overlay)
+            if (_showSettingsModal)
+              _buildSettingsModal(),
+            if (_showCharacterSelectModal)
+              _buildCharacterSelectModal(),
             Positioned(
               top: 80, // Moved down to make room for character info and menu
               right: 16,
