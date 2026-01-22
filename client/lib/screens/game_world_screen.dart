@@ -3097,6 +3097,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _settingsView = null;
       _selectedCharacter = null;
       
+      // Reset death state and HP for new character
+      _isDead = false;
+      _playerHp = 100.0;
+      _playerMaxHp = 100.0;
+      
       _currentCharacterId = character['id'] as String;
       _currentCharacterName = character['name'] as String;
       _currentSpriteType = character['spriteType'] as String? ?? 'char-1';
