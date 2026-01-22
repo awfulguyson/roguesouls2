@@ -2261,20 +2261,6 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                               _refreshCharacters();
                             },
                           ),
-                          ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.add, size: 20),
-                            title: const Text(
-                              'Create Character',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                            onTap: () {
-                              setState(() {
-                                _showSettingsModal = false;
-                                _showCharacterCreateModal = true;
-                              });
-                            },
-                          ),
                         ],
                       ),
                     ),
