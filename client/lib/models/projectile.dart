@@ -1,5 +1,10 @@
 import 'dart:math';
 
+enum ProjectileType {
+  autoAttack, // Small orange projectile (old ability 1)
+  ability1,   // Big red projectile (new ability 1)
+}
+
 class Projectile {
   final String id;
   double x;
@@ -9,6 +14,7 @@ class Projectile {
   final double speed;
   final double damage;
   final DateTime createdAt;
+  final ProjectileType type;
   
   Projectile({
     required this.id,
@@ -18,6 +24,7 @@ class Projectile {
     required this.targetY,
     this.speed = 500.0, // pixels per second
     this.damage = 10.0,
+    this.type = ProjectileType.autoAttack,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
   

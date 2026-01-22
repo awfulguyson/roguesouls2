@@ -157,8 +157,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
   // Projectiles
   final List<Projectile> _projectiles = [];
   DateTime? _lastAbility1Use;
-  static const Duration _ability1Cooldown = Duration(milliseconds: 500);
+  static const Duration _ability1Cooldown = Duration(seconds: 3);
+  DateTime? _lastAutoAttackUse;
+  static const Duration _autoAttackCooldown = Duration(milliseconds: 500);
   int _projectileIdCounter = 0;
+  bool _isAutoAttacking = false;
+  String? _autoAttackTargetId;
   bool _showSettingsModal = false;
   bool _showCharacterCreateModal = false;
   bool _showCharacterSelectModal = false;
@@ -290,6 +294,11 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       _interpolateOtherPlayers();
       _updateProjectiles(16 / 1000.0); // Convert milliseconds to seconds
       _checkCurrencyCollection(); // Check for currency collection
+      
+      // Auto-attack loop
+      if (_isAutoAttacking && _autoAttackTargetId != null) {
+        _useAutoAttack();
+      }
       _updateFloatingTexts(); // Update floating text animations
     });
     
@@ -852,6 +861,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         targetY: (data['targetY'] as num).toDouble(),
         speed: (data['speed'] as num).toDouble(),
         damage: 10.0, // Default damage
+        type: ProjectileType.autoAttack, // Default to auto-attack for received projectiles
       );
       
       setState(() {
@@ -1101,6 +1111,71 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
            screenY <= _screenHeight + padding;
   }
   
+  // Auto-attack (old ability 1, now triggered by right-click)
+  void _useAutoAttack() {
+    // Check cooldown
+    final now = DateTime.now();
+    if (_lastAutoAttackUse != null) {
+      final timeSinceLastUse = now.difference(_lastAutoAttackUse!);
+      if (timeSinceLastUse < _autoAttackCooldown) {
+        return; // Still on cooldown
+      }
+    }
+    
+    // Need a targeted enemy to fire at
+    if (_autoAttackTargetId == null) {
+      return;
+    }
+    
+    // Find the targeted enemy
+    final targetEnemy = _enemies.firstWhere(
+      (e) => e.id == _autoAttackTargetId,
+      orElse: () => throw StateError('Auto-attack target not found'),
+    );
+    
+    // Only fire if enemy is visible and alive
+    if (!_isEnemyVisible(targetEnemy) || targetEnemy.currentHp <= 0) {
+      _isAutoAttacking = false;
+      _autoAttackTargetId = null;
+      return;
+    }
+    
+    // Create projectile from player position to enemy position
+    final projectile = Projectile(
+      id: 'projectile_${_projectileIdCounter++}',
+      x: _playerX,
+      y: _playerY,
+      targetX: targetEnemy.x,
+      targetY: targetEnemy.y,
+      speed: 500.0,
+      damage: 10.0,
+      type: ProjectileType.autoAttack,
+    );
+    
+    // Send projectile to server so other players can see it
+    if (_currentCharacterId != null) {
+      _gameService.sendProjectileCreate(
+        projectile.id,
+        projectile.x,
+        projectile.y,
+        projectile.targetX,
+        projectile.targetY,
+        projectile.speed,
+        _currentCharacterId!,
+      );
+    }
+    
+    _lastAutoAttackUse = now;
+    
+    if (mounted) {
+      setState(() {
+        _projectiles.add(projectile);
+        _repaintCounter++;
+      });
+    }
+  }
+  
+  // New ability 1 (bigger, red projectile, 3s cooldown, 50 damage)
   void _useAbility1() {
     // Check cooldown
     final now = DateTime.now();
@@ -1135,7 +1210,8 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
       targetX: targetEnemy.x,
       targetY: targetEnemy.y,
       speed: 500.0,
-      damage: 10.0,
+      damage: 50.0,
+      type: ProjectileType.ability1,
     );
     
     // Send projectile to server so other players can see it
@@ -1902,6 +1978,47 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                   onTapDown: (details) {
                     _targetEnemyAtPosition(details.localPosition);
                   },
+                  onSecondaryTapDown: (details) {
+                    // Right-click: start auto-attack
+                    final worldX = _screenToWorldX(details.localPosition.dx);
+                    final worldY = _screenToWorldY(details.localPosition.dy);
+                    
+                    Enemy? closestEnemy;
+                    double closestDistance = double.infinity;
+                    const double targetRange = 100.0;
+                    
+                    for (var enemy in _enemies) {
+                      if (!_isEnemyVisible(enemy) || enemy.currentHp <= 0) {
+                        continue;
+                      }
+                      
+                      final dx = worldX - enemy.x;
+                      final dy = worldY - enemy.y;
+                      final distance = sqrt(dx * dx + dy * dy);
+                      
+                      if (distance < targetRange && distance < closestDistance) {
+                        closestEnemy = enemy;
+                        closestDistance = distance;
+                      }
+                    }
+                    
+                    if (closestEnemy != null) {
+                      setState(() {
+                        _isAutoAttacking = true;
+                        _autoAttackTargetId = closestEnemy!.id;
+                        _targetedEnemyId = closestEnemy!.id;
+                      });
+                      // Fire immediately
+                      _useAutoAttack();
+                    }
+                  },
+                  onSecondaryTapUp: (details) {
+                    // Stop auto-attack on right-click release
+                    setState(() {
+                      _isAutoAttacking = false;
+                      _autoAttackTargetId = null;
+                    });
+                  },
                   child: gameContent,
                 ),
               ),
@@ -1909,7 +2026,122 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
           ),
           if (_isLoading)
             _buildLoadingScreen(),
+          // Action bar at bottom
+          if (_currentCharacterId != null)
+            Positioned(
+              bottom: 16,
+              left: 0,
+              right: 0,
+              child: _buildActionBar(),
+            ),
         ],
+      ),
+    );
+  }
+  
+  Widget _buildActionBar() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(8, (index) {
+            if (index == 0) {
+              // First slot: Ability 1
+              final now = DateTime.now();
+              final cooldownRemaining = _lastAbility1Use != null
+                  ? _ability1Cooldown.inMilliseconds - now.difference(_lastAbility1Use!).inMilliseconds
+                  : 0;
+              final isOnCooldown = cooldownRemaining > 0;
+              final cooldownPercent = isOnCooldown
+                  ? (cooldownRemaining / _ability1Cooldown.inMilliseconds).clamp(0.0, 1.0)
+                  : 0.0;
+              
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  border: Border.all(color: Colors.grey, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  children: [
+                    // Icon
+                    Center(
+                      child: Text(
+                        '🦊',
+                        style: TextStyle(
+                          fontSize: 32,
+                          color: isOnCooldown ? Colors.grey : Colors.white,
+                        ),
+                      ),
+                    ),
+                    // Cooldown overlay
+                    if (isOnCooldown)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: FractionallySizedBox(
+                            heightFactor: cooldownPercent,
+                            child: Container(
+                              color: Colors.black.withOpacity(0.7),
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Cooldown text
+                    if (isOnCooldown)
+                      Center(
+                        child: Text(
+                          '${(cooldownRemaining / 1000).ceil()}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black,
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            } else {
+              // Empty slots
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  border: Border.all(color: Colors.grey, width: 2),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.5),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }),
+        ),
       ),
     );
   }
@@ -3805,25 +4037,47 @@ class GameWorldPainter extends CustomPainter {
       final screenX = worldToScreenX(projectile.x);
       final screenY = worldToScreenY(projectile.y);
       
-      // Draw projectile as a small circle
-      final projectilePaint = Paint()
-        ..color = Colors.orange
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(
-        Offset(screenX, screenY),
-        4.0, // Projectile radius
-        projectilePaint,
-      );
-      
-      // Draw a trail/glow effect
-      final glowPaint = Paint()
-        ..color = Colors.orange.withOpacity(0.3)
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(
-        Offset(screenX, screenY),
-        8.0,
-        glowPaint,
-      );
+      if (projectile.type == ProjectileType.ability1) {
+        // Big red projectile for ability 1
+        final projectilePaint = Paint()
+          ..color = Colors.red
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset(screenX, screenY),
+          8.0, // Bigger radius
+          projectilePaint,
+        );
+        
+        // Draw a trail/glow effect
+        final glowPaint = Paint()
+          ..color = Colors.red.withOpacity(0.3)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset(screenX, screenY),
+          16.0,
+          glowPaint,
+        );
+      } else {
+        // Small orange projectile for auto-attack
+        final projectilePaint = Paint()
+          ..color = Colors.orange
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset(screenX, screenY),
+          4.0, // Projectile radius
+          projectilePaint,
+        );
+        
+        // Draw a trail/glow effect
+        final glowPaint = Paint()
+          ..color = Colors.orange.withOpacity(0.3)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(
+          Offset(screenX, screenY),
+          8.0,
+          glowPaint,
+        );
+      }
     }
     
     // Draw currency coins
