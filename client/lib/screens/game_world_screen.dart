@@ -1695,8 +1695,12 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
         // If clicked on an enemy, target it; otherwise clear target
         if (closestEnemy != null) {
           _targetedEnemyId = closestEnemy.id;
+          // If auto-attack was active, keep it active with new target
+          // Otherwise, don't change auto-attack state
         } else {
           _targetedEnemyId = null;
+          // Clear target also stops auto-attack
+          _isAutoAttacking = false;
         }
         _repaintCounter++;
       });
