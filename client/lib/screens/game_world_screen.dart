@@ -706,11 +706,21 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
             final lastRotationAngle = (enemyJson['lastRotationAngle'] as num).toDouble();
             existingEnemy.setLastRotationAngle(lastRotationAngle);
           }
+          
+          // Update aggro tracking - check if enemy is targeting current player
+          final targetPlayerId = enemyJson['targetPlayerId'] as String?;
+          if (targetPlayerId == _currentCharacterId) {
+            _aggroEnemyIds.add(enemyId);
+          } else {
+            _aggroEnemyIds.remove(enemyId);
+          }
         }
         
         // Remove enemies that are no longer in server state
         final serverEnemyIds = enemyList.map((e) => (e as Map<String, dynamic>)['id'] as String).toSet();
         _enemies.removeWhere((e) => !serverEnemyIds.contains(e.id));
+        // Also remove from aggro set
+        _aggroEnemyIds.removeWhere((id) => !serverEnemyIds.contains(id));
         
         _repaintCounter++;
       });
@@ -1962,6 +1972,7 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                       if (_targetedEnemyId != null) {
                         setState(() {
                           _targetedEnemyId = null;
+                          _isAutoAttacking = false; // Stop auto-attack when clearing target
                           _repaintCounter++;
                         });
                       } else {
@@ -2017,19 +2028,14 @@ class _GameWorldScreenState extends State<GameWorldScreen> {
                       });
                       // Fire immediately
                       _useAutoAttack();
+                    } else {
+                      // Right-click on empty space: toggle auto-attack off if already on
+                      if (_isAutoAttacking) {
+                        setState(() {
+                          _isAutoAttacking = false;
+                        });
+                      }
                     }
-                  },
-                  onSecondaryTapUp: (details) {
-                    // Stop auto-attack on right-click release
-                    setState(() {
-                      _isAutoAttacking = false;
-                    });
-                  },
-                  onSecondaryTapCancel: () {
-                    // Stop auto-attack if right-click is cancelled
-                    setState(() {
-                      _isAutoAttacking = false;
-                    });
                   },
                   child: gameContent,
                 ),
